@@ -13,7 +13,7 @@ import (
 
 	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime"
-	tutil "github.com/post-quantumqoin/specs-contracts/contrancts/testing"
+	tutil "github.com/post-quantumqoin/specs-contracts/support/testing"
 )
 
 type FakeActor struct{}

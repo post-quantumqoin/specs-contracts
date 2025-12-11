@@ -9,16 +9,16 @@ import (
 
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/github.com/post-quantumqoin/specs-contracts/builtin"
-	"github.com/github.com/post-quantumqoin/specs-contracts/builtin/market"
-	"github.com/github.com/post-quantumqoin/specs-contracts/builtin/power"
-	"github.com/github.com/post-quantumqoin/specs-contracts/builtin/reward"
 	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/crypto"
+	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/market"
+	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/power"
+	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/reward"
 )
 
 type DealClientConfig struct {
