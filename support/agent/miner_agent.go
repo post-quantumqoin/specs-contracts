@@ -19,9 +19,9 @@ import (
 	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/market"
 
-	"github.com/filecoin-project/specs-actors/v8/support/vm"
 	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/miner"
 	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime/proof"
+	"github.com/post-quantumqoin/specs-contracts/support/vm"
 )
 
 type MinerAgentConfig struct {

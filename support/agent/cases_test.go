@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/post-quantumqoin/specs-contracts/actors/builtin"
-	"github.com/post-quantumqoin/specs-contracts/agent"
+	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/power"
-	"github.com/post-quantumqoin/specs-contracts/states"
+	"github.com/post-quantumqoin/specs-contracts/contrancts/states"
+	"github.com/post-quantumqoin/specs-contracts/support/agent"
 	"github.com/post-quantumqoin/specs-contracts/support/ipld"
 	"github.com/post-quantumqoin/specs-contracts/support/vm"
 )
