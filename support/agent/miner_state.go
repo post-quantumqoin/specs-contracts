@@ -8,9 +8,9 @@ import (
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/dline"
-	miner4 "github.com/post-quantumqoin/specs-contracts/contrancts/builtin/miner"
-	miner5 "github.com/post-quantumqoin/specs-contracts/contrancts/builtin/miner"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
+	miner4 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
+	miner5 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
 type MinerStateV4 struct {

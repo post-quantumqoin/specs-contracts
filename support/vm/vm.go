@@ -16,11 +16,11 @@ import (
 	vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
 	"golang.org/x/xerrors"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	init_ "github.com/post-quantumqoin/specs-contracts/contrancts/builtin/init"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/states"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	init_ "github.com/post-quantumqoin/specs-contracts/contracts/builtin/init"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+	"github.com/post-quantumqoin/specs-contracts/contracts/states"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
 // VM is a simplified message execution framework for the purposes of testing inter-actor communication.

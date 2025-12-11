@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/post-quantumqoin/address"
-	"github.com/post-quantumqoin/specs-contracts/exitcode"
+	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/stretchr/testify/assert"
 
 	builtin "github.com/post-quantumqoin/specs-contracts/contracts/builtin"

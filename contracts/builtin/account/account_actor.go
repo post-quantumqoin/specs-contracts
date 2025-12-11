@@ -7,8 +7,8 @@ import (
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/exitcode"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
 )
 
 type Actor struct{}
