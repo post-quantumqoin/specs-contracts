@@ -16,11 +16,11 @@ import (
 	"github.com/post-quantumqoin/core-types/dline"
 	"golang.org/x/xerrors"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/market"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/miner"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime/proof"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime/proof"
 	"github.com/post-quantumqoin/specs-contracts/support/vm"
 )
 

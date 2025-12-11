@@ -21,11 +21,11 @@ import (
 	"github.com/post-quantumqoin/core-types/network"
 	"github.com/post-quantumqoin/core-types/rt"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/exported"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime/proof"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/exported"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime/proof"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 	"github.com/post-quantumqoin/specs-contracts/support/ipld"
 )
 

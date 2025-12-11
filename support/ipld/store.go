@@ -9,7 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
 // Creates a new, empty, unsynchronized IPLD store in memory.

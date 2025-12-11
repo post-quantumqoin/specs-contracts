@@ -8,7 +8,7 @@ import (
 
 	"github.com/post-quantumqoin/address"
 	abi "github.com/post-quantumqoin/core-types/abi"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 )
 
 //

@@ -13,8 +13,8 @@ import (
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/network"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"

@@ -15,10 +15,10 @@ import (
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/crypto"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/market"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/power"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/reward"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/power"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/reward"
 )
 
 type DealClientConfig struct {

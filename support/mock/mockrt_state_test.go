@@ -11,8 +11,8 @@ import (
 	"github.com/post-quantumqoin/core-types/exitcode"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/runtime"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
 	tutil "github.com/post-quantumqoin/specs-contracts/support/testing"
 )
 

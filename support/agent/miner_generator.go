@@ -7,8 +7,8 @@ import (
 	"github.com/post-quantumqoin/core-types/cbor"
 	"golang.org/x/xerrors"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/power"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/power"
 )
 
 // MinerGenerator adds miner agents to the simulation at a configured rate.

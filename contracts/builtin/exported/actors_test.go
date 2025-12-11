@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	init_ "ggithub.com/post-quantumqoin/specs-contracts/contracts/builtin/init"
 	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/account"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/cron"
+	init_ "github.com/post-quantumqoin/specs-contracts/contracts/builtin/init"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/multisig"

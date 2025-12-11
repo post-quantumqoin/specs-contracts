@@ -19,16 +19,16 @@ import (
 	"github.com/post-quantumqoin/core-types/rt"
 	"golang.org/x/xerrors"
 
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/market"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/power"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/builtin/reward"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/states"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/support/ipld"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/support/vm"
-	vm2 "github.com/post-quantumqoin/specs-contracts/contrancts/support/vm"
-	"github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
-	adt2 "github.com/post-quantumqoin/specs-contracts/contrancts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/power"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/reward"
+	"github.com/post-quantumqoin/specs-contracts/contracts/states"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	adt2 "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/support/ipld"
+	"github.com/post-quantumqoin/specs-contracts/support/vm"
+	vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
 )
 
 // Sim is a simulation framework to exercise actor code in a network-like environment.
