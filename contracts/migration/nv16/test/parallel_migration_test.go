@@ -8,8 +8,8 @@ import (
 
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/post-quantumqoin/core-types/abi"
-	adt7 "github.com/post-quantumqoin/specs-contracts/actors/util/adt"
-	"github.com/post-quantumqoin/specs-contracts/migration/nv16"
+	"github.com/post-quantumqoin/specs-contracts/contracts/migration/nv16"
+	adt7 "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 	ipld2 "github.com/post-quantumqoin/specs-contracts/support/ipld"
 
 	"github.com/ipfs/go-cid"
