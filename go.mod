@@ -17,9 +17,9 @@ require (
 	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/pkg/errors v0.9.1
-	github.com/post-quantumqoin/address v0.0.2
-	github.com/post-quantumqoin/bitset v0.1.0
-	github.com/post-quantumqoin/core-types v0.3.0
+	github.com/post-quantumqoin/address v0.1.0
+	github.com/post-quantumqoin/bitset v0.1.1
+	github.com/post-quantumqoin/core-types v0.4.1
 	github.com/stretchr/testify v1.11.1
 	github.com/whyrusleeping/cbor-gen v0.3.1
 	github.com/xorcare/golden v0.8.3
