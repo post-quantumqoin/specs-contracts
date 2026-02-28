@@ -2,7 +2,6 @@ module github.com/post-quantumqoin/specs-contracts
 
 go 1.21
 
-
 require (
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0
 	github.com/filecoin-project/go-hamt-ipld v0.1.5
