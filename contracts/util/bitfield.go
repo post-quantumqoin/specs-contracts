@@ -2,6 +2,7 @@ package util
 
 import (
 	bitfield "github.com/post-quantumqoin/bitset"
+	rlepluslazy "github.com/post-quantumqoin/bitset/rle"
 )
 
 type BitField = bitfield.BitField

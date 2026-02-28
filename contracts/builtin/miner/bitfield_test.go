@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	bitfield "github.com/post-quantumqoin/bitset"
+	rlepluslazy "github.com/post-quantumqoin/bitset/rle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
