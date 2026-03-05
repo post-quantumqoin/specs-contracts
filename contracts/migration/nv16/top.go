@@ -11,10 +11,12 @@ import (
 	"github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/rt"
+	// builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	builtin7 "github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	// states7 "github.com/filecoin-project/specs-actors/v7/actors/states"
+	states7 "github.com/post-quantumqoin/specs-contracts/contracts/states"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/exported"
 	manifest8 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/manifest"
-	states7 "github.com/post-quantumqoin/specs-contracts/contracts/states"
 	states8 "github.com/post-quantumqoin/specs-contracts/contracts/states"
 	adt8 "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 

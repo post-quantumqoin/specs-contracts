@@ -1,40 +1,54 @@
 package builtin
 
 import (
-	"github.com/pkg/errors"
 	stabi "github.com/post-quantumqoin/core-types/abi"
+	"golang.org/x/xerrors"
 )
 
 // Policy values associated with a seal proof type.
 type SealProofPolicy struct {
-	SectorMaxLifetime      stabi.ChainEpoch
-	ConsensusMinerMinPower stabi.StoragePower
+	SectorMaxLifetime stabi.ChainEpoch
 }
 
-// For all Stacked DRG sectors, the max is 5 years
-const epochsPerYear = 1_051_200
-const fiveYears = stabi.ChainEpoch(5 * epochsPerYear)
+// For V1 Stacked DRG sectors, the max is 540 days since Network Version 11
+// 	according to https://github.com/filecoin-project/FIPs/blob/master/FIPS/fip-0014.md
+const EpochsIn540Days = stabi.ChainEpoch(540 * EpochsInDay)
 
-var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
+// For V1_1 Stacked DRG sectors, the max is 5 years
+const EpochsInFiveYears = stabi.ChainEpoch(5 * EpochsInYear)
+
+// 540-day maximum life time setting for V1 since network version 11
+var SealProofPoliciesV11 = map[stabi.RegisteredSealProof]*SealProofPolicy{
 	stabi.RegisteredSealProof_StackedDrg2KiBV1: {
-		SectorMaxLifetime:      fiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(0),
+		SectorMaxLifetime: EpochsIn540Days,
 	},
 	stabi.RegisteredSealProof_StackedDrg8MiBV1: {
-		SectorMaxLifetime:      fiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(16 << 20),
+		SectorMaxLifetime: EpochsIn540Days,
 	},
 	stabi.RegisteredSealProof_StackedDrg512MiBV1: {
-		SectorMaxLifetime:      fiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(1 << 30),
+		SectorMaxLifetime: EpochsIn540Days,
 	},
 	stabi.RegisteredSealProof_StackedDrg32GiBV1: {
-		SectorMaxLifetime:      fiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(100 << 40),
+		SectorMaxLifetime: EpochsIn540Days,
 	},
 	stabi.RegisteredSealProof_StackedDrg64GiBV1: {
-		SectorMaxLifetime:      fiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(200 << 40),
+		SectorMaxLifetime: EpochsIn540Days,
+	},
+
+	stabi.RegisteredSealProof_StackedDrg2KiBV1_1: {
+		SectorMaxLifetime: EpochsInFiveYears,
+	},
+	stabi.RegisteredSealProof_StackedDrg8MiBV1_1: {
+		SectorMaxLifetime: EpochsInFiveYears,
+	},
+	stabi.RegisteredSealProof_StackedDrg512MiBV1_1: {
+		SectorMaxLifetime: EpochsInFiveYears,
+	},
+	stabi.RegisteredSealProof_StackedDrg32GiBV1_1: {
+		SectorMaxLifetime: EpochsInFiveYears,
+	},
+	stabi.RegisteredSealProof_StackedDrg64GiBV1_1: {
+		SectorMaxLifetime: EpochsInFiveYears,
 	},
 }
 
@@ -50,9 +64,9 @@ func SealProofWindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, e
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
 func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpoch, error) {
-	info, ok := SealProofPolicies[p]
+	info, ok := SealProofPoliciesV11[p]
 	if !ok {
-		return 0, errors.Errorf("unsupported proof type: %v", p)
+		return 0, xerrors.Errorf("unsupported proof type: %v", p)
 	}
 	return info.SectorMaxLifetime, nil
 }
@@ -65,10 +79,10 @@ func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpo
 // - Ensures that a specific soundness for the power table
 // Note: We may be able to reduce this in the future, addressing consensus faults with more complicated penalties,
 // sybil generation with crypto-economic mechanism, and PoSt soundness by increasing the challenges for small miners.
-func ConsensusMinerMinPower(p stabi.RegisteredSealProof) (stabi.StoragePower, error) {
-	info, ok := SealProofPolicies[p]
+func ConsensusMinerMinPower(p stabi.RegisteredPoStProof) (stabi.StoragePower, error) {
+	info, ok := PoStProofPolicies[p]
 	if !ok {
-		return stabi.NewStoragePower(0), errors.Errorf("unsupported proof type: %v", p)
+		return stabi.NewStoragePower(0), xerrors.Errorf("unsupported proof type: %v", p)
 	}
 	return info.ConsensusMinerMinPower, nil
 }
@@ -76,24 +90,31 @@ func ConsensusMinerMinPower(p stabi.RegisteredSealProof) (stabi.StoragePower, er
 // Policy values associated with a PoSt proof type.
 type PoStProofPolicy struct {
 	WindowPoStPartitionSectors uint64
+	ConsensusMinerMinPower     stabi.StoragePower
 }
 
 // Partition sizes must match those used by the proofs library.
+// See https://github.com/filecoin-project/rust-fil-proofs/blob/master/filecoin-proofs/src/constants.rs#L85
 var PoStProofPolicies = map[stabi.RegisteredPoStProof]*PoStProofPolicy{
 	stabi.RegisteredPoStProof_StackedDrgWindow2KiBV1: {
 		WindowPoStPartitionSectors: 2,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow8MiBV1: {
 		WindowPoStPartitionSectors: 2,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow512MiBV1: {
 		WindowPoStPartitionSectors: 2,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow32GiBV1: {
 		WindowPoStPartitionSectors: 2349,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow64GiBV1: {
 		WindowPoStPartitionSectors: 2300,
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	// Winning PoSt proof types omitted.
 }
@@ -103,7 +124,7 @@ var PoStProofPolicies = map[stabi.RegisteredPoStProof]*PoStProofPolicy{
 func PoStProofWindowPoStPartitionSectors(p stabi.RegisteredPoStProof) (uint64, error) {
 	info, ok := PoStProofPolicies[p]
 	if !ok {
-		return 0, errors.Errorf("unsupported proof type: %v", p)
+		return 0, xerrors.Errorf("unsupported proof type: %v", p)
 	}
 	return info.WindowPoStPartitionSectors, nil
 }

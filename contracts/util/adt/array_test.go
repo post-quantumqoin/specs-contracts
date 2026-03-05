@@ -1,7 +1,6 @@
 package adt_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/post-quantumqoin/address"
@@ -12,9 +11,10 @@ import (
 )
 
 func TestArrayNotFound(t *testing.T) {
-	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+	rt := mock.NewBuilder(address.Undef).Build(t)
 	store := adt.AsStore(rt)
-	arr := adt.MakeEmptyArray(store)
+	arr, err := adt.MakeEmptyArray(store, 3)
+	require.NoError(t, err)
 
 	found, err := arr.Get(7, nil)
 	require.NoError(t, err)

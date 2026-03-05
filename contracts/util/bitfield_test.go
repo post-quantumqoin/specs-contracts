@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/util"

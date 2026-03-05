@@ -2,25 +2,25 @@ package paych
 
 import (
 	"bytes"
-	"math"
 
-	"github.com/ipfs/go-cid"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/cbor"
-	"github.com/post-quantumqoin/core-types/crypto"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	// paych0 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/paych"
+	// paych7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/paych"
+	paychtypes "github.com/post-quantumqoin/core-types/builtin/v8/paych"
+	"github.com/ipfs/go-cid"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
-// Maximum number of lanes in a channel.
-const MaxLane = math.MaxInt64
-
-const SettleDelay = builtin.EpochsInHour * 12
+const (
+	ErrChannelStateUpdateAfterSettled = exitcode.FirstActorSpecificExitCode + iota
+)
 
 type Actor struct{}
 
@@ -47,6 +47,7 @@ type ConstructorParams struct {
 	From addr.Address // Payer
 	To   addr.Address // Payee
 }
+// type ConstructorParams = paych0.ConstructorParams
 
 // Constructor creates a payment channel actor. See State for meaning of params.
 func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
@@ -56,12 +57,14 @@ func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *ab
 
 	// check that both parties are capable of signing vouchers
 	to, err := pca.resolveAccount(rt, params.To)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve to address: %s", params.To)
+	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to resolve to address: %s", params.To)
 	from, err := pca.resolveAccount(rt, params.From)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve from address: %s", params.From)
+	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to resolve from address: %s", params.From)
 
-	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	emptyArr, err := adt.MakeEmptyArray(adt.AsStore(rt), LaneStatesAmtBitwidth)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
+	emptyArrCid, err := emptyArr.Root()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to persist empty array")
 
 	st := ConstructState(from, to, emptyArrCid)
 	rt.StateCreate(st)
@@ -70,76 +73,61 @@ func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *ab
 }
 
 // Resolves an address to a canonical ID address and requires it to address an account actor.
-// The account actor constructor checks that the embedded address is associated with an appropriate key.
-// An alternative (more expensive) would be to send a message to the actor to fetch its key.
 func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Address, error) {
-	resolved, ok := rt.ResolveAddress(raw)
-	if !ok {
-		return addr.Undef, exitcode.ErrNotFound.Wrapf("failed to resolve address %v", raw)
+	resolved, err := builtin.ResolveToIDAddr(rt, raw)
+	if err != nil {
+		return addr.Undef, exitcode.ErrIllegalState.Wrapf("failed to resolve address %v: %w", raw, err)
 	}
 
 	codeCID, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
-		return addr.Undef, exitcode.ErrForbidden.Wrapf("no code for address %v", resolved)
+		return addr.Undef, exitcode.ErrIllegalArgument.Wrapf("no code for address %v", resolved)
 	}
 	if codeCID != builtin.AccountActorCodeID {
 		return addr.Undef, exitcode.ErrForbidden.Wrapf("actor %v must be an account (%v), was %v", raw,
 			builtin.AccountActorCodeID, codeCID)
 	}
+
 	return resolved, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Payment Channel state operations
 ////////////////////////////////////////////////////////////////////////////////
+type UpdateChannelStateParams = paychtypes.UpdateChannelStateParams
+// type UpdateChannelStateParams = paych7.UpdateChannelStateParams
+type SignedVoucher = paychtypes.SignedVoucher
+// type SignedVoucher = paych7.SignedVoucher
 
-type UpdateChannelStateParams struct {
-	Sv     SignedVoucher
-	Secret []byte
-	Proof  []byte
-}
+func VoucherSigningBytes(t *SignedVoucher) ([]byte, error) {
+	osv := *t
+	osv.Signature = nil
 
-// A voucher is sent by `From` to `To` off-chain in order to enable
-// `To` to redeem payments on-chain in the future
-type SignedVoucher struct {
-	// ChannelAddr is the address of the payment channel this signed voucher is valid for
-	ChannelAddr addr.Address
-	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
-	TimeLockMin abi.ChainEpoch
-	// TimeLockMax sets a max epoch beyond which the voucher cannot be redeemed
-	// TimeLockMax set to 0 means no timeout
-	TimeLockMax abi.ChainEpoch
-	// (optional) The SecretPreImage is used by `To` to validate
-	SecretPreimage []byte
-	// (optional) Extra can be specified by `From` to add a verification method to the voucher
-	Extra *ModVerifyParams
-	// Specifies which lane the Voucher merges into (will be created if does not exist)
-	Lane uint64
-	// Nonce is set by `From` to prevent redemption of stale vouchers on a lane
-	Nonce uint64
-	// Amount voucher can be redeemed for
-	Amount big.Int
-	// (optional) MinSettleHeight can extend channel MinSettleHeight if needed
-	MinSettleHeight abi.ChainEpoch
+	buf := new(bytes.Buffer)
+	if err := osv.MarshalCBOR(buf); err != nil {
+		return nil, err
+	}
 
-	// (optional) Set of lanes to be merged into `Lane`
-	Merges []Merge
-
-	// Sender's signature over the voucher
-	Signature *crypto.Signature
+	return buf.Bytes(), nil
 }
 
 // Modular Verification method
 type ModVerifyParams struct {
-	Actor  addr.Address
+	// Actor on which to invoke the method.
+	Actor addr.Address
+	// Method to invoke.
 	Method abi.MethodNum
+	// Pre-serialized method parameters.
 	Data   []byte
 }
+// type ModVerifyParams = paych0.ModVerifyParams
 
-type PaymentVerifyParams struct {
-	Extra []byte
-	Proof []byte
+// Specifies which `Lane`s to be merged with what `Nonce` on channelUpdate
+type Merge struct {
+	Lane  uint64
+	Nonce uint64
 }
+// type Merge = paych0.Merge
 
 func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *abi.EmptyValue {
 	var st State
@@ -159,15 +147,27 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher has no signature")
 	}
 
-	vb, err := sv.SigningBytes()
+	if st.SettlingAt != 0 && rt.CurrEpoch() >= st.SettlingAt {
+		rt.Abortf(ErrChannelStateUpdateAfterSettled, "no vouchers can be processed after SettlingAt epoch")
+	}
+
+	if len(params.Secret) > MaxSecretSize {
+		rt.Abortf(exitcode.ErrIllegalArgument, "secret must be at most 256 bytes long")
+	}
+
+	vb, err := VoucherSigningBytes(&sv)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 
 	err = rt.VerifySignature(*sv.Signature, signer, vb)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "voucher signature invalid")
 
 	pchAddr := rt.Receiver()
-	if pchAddr != sv.ChannelAddr {
-		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not match receiver %s", sv.ChannelAddr, pchAddr)
+	svpchIDAddr, found := rt.ResolveAddress(sv.ChannelAddr)
+	if !found {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not resolve to an ID address", sv.ChannelAddr)
+	}
+	if pchAddr != svpchIDAddr {
+		rt.Abortf(exitcode.ErrIllegalArgument, "voucher payment channel address %s does not match receiver %s", svpchIDAddr, pchAddr)
 	}
 
 	if rt.CurrEpoch() < sv.TimeLockMin {
@@ -182,9 +182,9 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher amount must be non-negative, was %v", sv.Amount)
 	}
 
-	if len(sv.SecretPreimage) > 0 {
+	if len(sv.SecretHash) > 0 {
 		hashedSecret := rt.HashBlake2b(params.Secret)
-		if !bytes.Equal(hashedSecret[:], sv.SecretPreimage) {
+		if !bytes.Equal(hashedSecret[:], sv.SecretHash) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "incorrect secret!")
 		}
 	}
@@ -194,10 +194,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 		code := rt.Send(
 			sv.Extra.Actor,
 			sv.Extra.Method,
-			&PaymentVerifyParams{
-				sv.Extra.Data,
-				params.Proof,
-			},
+			builtin.CBORBytes(sv.Extra.Data),
 			abi.NewTokenAmount(0),
 			&builtin.Discard{},
 		)
@@ -207,7 +204,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 	rt.StateTransaction(&st, func() {
 		laneFound := true
 
-		lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
+		lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates, LaneStatesAmtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load lanes")
 
 		// Find the voucher lane, creating if necessary.
@@ -332,18 +329,6 @@ func (pca Actor) Collect(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue 
 	rt.DeleteActor(st.From)
 
 	return nil
-}
-
-func (t *SignedVoucher) SigningBytes() ([]byte, error) {
-	osv := *t
-	osv.Signature = nil
-
-	buf := new(bytes.Buffer)
-	if err := osv.MarshalCBOR(buf); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
 }
 
 // Returns the insertion index for a lane ID, with the matching lane state if found, or nil.

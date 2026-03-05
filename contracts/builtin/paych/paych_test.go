@@ -1,25 +1,25 @@
 package paych_test
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/ipfs/go-cid"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/crypto"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	. "github.com/post-quantumqoin/specs-contracts/contracts/builtin/paych"
-	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
-	adt "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 	"github.com/post-quantumqoin/specs-contracts/support/mock"
 	tutil "github.com/post-quantumqoin/specs-contracts/support/testing"
 )
@@ -29,7 +29,6 @@ func TestExports(t *testing.T) {
 }
 
 func TestPaymentChannelActor_Constructor(t *testing.T) {
-	ctx := context.Background()
 	paychAddr := tutil.NewIDAddr(t, 100)
 	payerAddr := tutil.NewIDAddr(t, 101)
 	payeeAddr := tutil.NewIDAddr(t, 102)
@@ -38,12 +37,32 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 	actor := pcActorHarness{Actor{}, t, paychAddr, payerAddr, payeeAddr}
 
 	t.Run("can create a payment channel actor", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, paychAddr).
+		builder := mock.NewBuilder(paychAddr).
 			WithCaller(callerAddr, builtin.InitActorCodeID).
 			WithActorType(payerAddr, builtin.AccountActorCodeID).
 			WithActorType(payeeAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
 		actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
+		actor.checkState(rt)
+	})
+
+	t.Run("creates a payment channel actor after resolving non-ID addresses to ID addresses", func(t *testing.T) {
+		payerAddr := tutil.NewIDAddr(t, 101)
+		payerNonId := tutil.NewBLSAddr(t, 102)
+
+		payeeAddr := tutil.NewIDAddr(t, 103)
+		payeeNonId := tutil.NewBLSAddr(t, 104)
+
+		builder := mock.NewBuilder(paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(payerAddr, builtin.AccountActorCodeID).
+			WithActorType(payeeAddr, builtin.AccountActorCodeID)
+		rt := builder.Build(t)
+		rt.AddIDAddress(payerNonId, payerAddr)
+		rt.AddIDAddress(payeeNonId, payeeAddr)
+
+		actor.constructAndVerify(t, rt, payerNonId, payeeNonId)
+		actor.checkState(rt)
 	})
 
 	nonAccountCodeID := builtin.MultisigActorCodeID
@@ -67,23 +86,11 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 			builtin.AccountActorCodeID,
 			payeeAddr,
 			exitcode.ErrForbidden,
-		}, {"fails if target cannot be resolved",
-			builtin.AccountActorCodeID,
-			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
-			builtin.AccountActorCodeID,
-			payeeAddr,
-			exitcode.ErrNotFound,
-		}, {"fails if sender cannot be resolved",
-			builtin.AccountActorCodeID,
-			payerAddr,
-			builtin.AccountActorCodeID,
-			tutil.NewSECP256K1Addr(t, "beach blanket babylon"),
-			exitcode.ErrNotFound,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			builder := mock.NewBuilder(ctx, paychAddr).
+			builder := mock.NewBuilder(paychAddr).
 				WithCaller(callerAddr, builtin.InitActorCodeID).
 				WithActorType(paychAddr, builtin.PaymentChannelActorCodeID).
 				WithActorType(payerAddr, tc.toCode).
@@ -96,21 +103,53 @@ func TestPaymentChannelActor_Constructor(t *testing.T) {
 		})
 	}
 
+	t.Run("fails if sender addr is not resolvable to ID address", func(t *testing.T) {
+		to := tutil.NewIDAddr(t, 101)
+		nonIdAddr := tutil.NewBLSAddr(t, 501)
+
+		rt := mock.NewBuilder(paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(to, builtin.AccountActorCodeID).Build(t)
+
+		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{From: nonIdAddr, To: to})
+		})
+		rt.Verify()
+	})
+
+	t.Run("fails if target addr is not resolvable to ID address", func(t *testing.T) {
+		from := tutil.NewIDAddr(t, 5555)
+		nonIdAddr := tutil.NewBLSAddr(t, 501)
+
+		rt := mock.NewBuilder(paychAddr).
+			WithCaller(callerAddr, builtin.InitActorCodeID).
+			WithActorType(from, builtin.AccountActorCodeID).Build(t)
+
+		rt.ExpectSend(nonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+			rt.Call(actor.Constructor, &ConstructorParams{From: from, To: nonIdAddr})
+		})
+		rt.Verify()
+	})
+
 	t.Run("fails if actor does not exist with: no code for address", func(t *testing.T) {
-		builder := mock.NewBuilder(ctx, paychAddr).
+		builder := mock.NewBuilder(paychAddr).
 			WithCaller(callerAddr, builtin.InitActorCodeID).
 			WithActorType(payerAddr, builtin.AccountActorCodeID)
 		rt := builder.Build(t)
 		rt.ExpectValidateCallerType(builtin.InitActorCodeID)
-		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(actor.Constructor, &ConstructorParams{To: paychAddr})
 		})
 	})
 }
 
 func TestPaymentChannelActor_CreateLane(t *testing.T) {
-	ctx := context.Background()
 	initActorAddr := tutil.NewIDAddr(t, 100)
+	paychNonId := tutil.NewBLSAddr(t, 201)
 	paychAddr := tutil.NewIDAddr(t, 101)
 	payerAddr := tutil.NewIDAddr(t, 102)
 	payeeAddr := tutil.NewIDAddr(t, 103)
@@ -135,10 +174,10 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 		paymentChannel addr.Address
 
-		secretPreimage []byte
-		sig            *crypto.Signature
-		verifySig      bool
-		expExitCode    exitcode.ExitCode
+		secretHash  []byte
+		sig         *crypto.Signature
+		verifySig   bool
+		expExitCode exitcode.ExitCode
 	}{
 		{desc: "succeeds", targetCode: builtin.AccountActorCodeID,
 			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
@@ -148,6 +187,14 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 			amt: 1, paymentChannel: tutil.NewIDAddr(t, 210), epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
 			expExitCode: exitcode.ErrIllegalArgument},
+		{desc: "fails if address on the signed voucher cannot be resolved to ID address", targetCode: builtin.AccountActorCodeID,
+			amt: 1, paymentChannel: tutil.NewBLSAddr(t, 1), epoch: 1, tlmin: 1, tlmax: 0,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.ErrIllegalArgument},
+		{desc: "succeeds if address on the signed voucher can be resolved to channel ID address", targetCode: builtin.AccountActorCodeID,
+			amt: 1, paymentChannel: paychNonId, epoch: 1, tlmin: 1, tlmax: 0,
+			sig: sig, verifySig: true,
+			expExitCode: exitcode.Ok},
 		{desc: "fails if balance too low", targetCode: builtin.AccountActorCodeID,
 			amt: 10, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
@@ -175,15 +222,15 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		{desc: "fails if SigningBytes fails", targetCode: builtin.AccountActorCodeID,
 			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
-			secretPreimage: make([]byte, 2<<21),
-			expExitCode:    exitcode.ErrIllegalArgument},
+			secretHash:  make([]byte, 2<<21),
+			expExitCode: exitcode.ErrIllegalArgument},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			hasher := func(data []byte) [32]byte { return [32]byte{} }
 
-			builder := mock.NewBuilder(ctx, paychAddr).
+			builder := mock.NewBuilder(paychAddr).
 				WithBalance(payChBalance, abi.NewTokenAmount(tc.received)).
 				WithEpoch(abi.ChainEpoch(tc.epoch)).
 				WithCaller(initActorAddr, builtin.InitActorCodeID).
@@ -192,23 +239,24 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				WithHasher(hasher)
 
 			rt := builder.Build(t)
+			rt.AddIDAddress(paychNonId, paychAddr)
 			actor.constructAndVerify(t, rt, payerAddr, payeeAddr)
 
 			sv := SignedVoucher{
-				ChannelAddr:    tc.paymentChannel,
-				TimeLockMin:    abi.ChainEpoch(tc.tlmin),
-				TimeLockMax:    abi.ChainEpoch(tc.tlmax),
-				Lane:           tc.lane,
-				Nonce:          tc.nonce,
-				Amount:         big.NewInt(tc.amt),
-				Signature:      tc.sig,
-				SecretPreimage: tc.secretPreimage,
+				ChannelAddr: tc.paymentChannel,
+				TimeLockMin: abi.ChainEpoch(tc.tlmin),
+				TimeLockMax: abi.ChainEpoch(tc.tlmax),
+				Lane:        tc.lane,
+				Nonce:       tc.nonce,
+				Amount:      big.NewInt(tc.amt),
+				Signature:   tc.sig,
+				SecretHash:  tc.secretHash,
 			}
 			ucp := &UpdateChannelStateParams{Sv: sv}
 
 			rt.SetCaller(payeeAddr, tc.targetCode)
 			rt.ExpectValidateCallerAddr(payerAddr, payeeAddr)
-			if tc.sig != nil && tc.secretPreimage == nil {
+			if tc.sig != nil && tc.secretHash == nil {
 				var result error
 				if !tc.verifySig {
 					result = fmt.Errorf("bad signature")
@@ -220,7 +268,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				rt.Call(actor.UpdateChannelState, ucp)
 				var st State
 				rt.GetState(&st)
-				lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
+				lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates, LaneStatesAmtBitwidth)
 				assert.NoError(t, err)
 				assert.Equal(t, uint64(1), lstates.Length())
 
@@ -231,6 +279,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 				assert.Equal(t, sv.Amount, ls.Redeemed)
 				assert.Equal(t, sv.Nonce, ls.Nonce)
+				actor.checkState(rt)
 			} else {
 				rt.ExpectAbort(tc.expExitCode, func() {
 					rt.Call(actor.UpdateChannelState, ucp)
@@ -245,14 +294,15 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 func assertLaneStatesLength(t *testing.T, rt *mock.Runtime, rcid cid.Cid, l int) {
 	t.Helper()
-	arr, err := adt.AsArray(adt.AsStore(rt), rcid)
+	arr, err := adt.AsArray(adt.AsStore(rt), rcid, LaneStatesAmtBitwidth)
 	assert.NoError(t, err)
 	assert.Equal(t, arr.Length(), uint64(l))
 }
 
 func constructLaneStateAMT(t *testing.T, rt *mock.Runtime, lss []*LaneState) cid.Cid {
 	t.Helper()
-	arr := adt.MakeEmptyArray(adt.AsStore(rt))
+	arr, err := adt.MakeEmptyArray(adt.AsStore(rt), LaneStatesAmtBitwidth)
+	require.NoError(t, err)
 	for i, ls := range lss {
 		err := arr.Set(uint64(i), ls)
 		assert.NoError(t, err)
@@ -265,7 +315,7 @@ func constructLaneStateAMT(t *testing.T, rt *mock.Runtime, lss []*LaneState) cid
 }
 
 func getLaneState(t *testing.T, rt *mock.Runtime, rcid cid.Cid, lane uint64) *LaneState {
-	arr, err := adt.AsArray(adt.AsStore(rt), rcid)
+	arr, err := adt.AsArray(adt.AsStore(rt), rcid, LaneStatesAmtBitwidth)
 	assert.NoError(t, err)
 
 	var out LaneState
@@ -277,11 +327,10 @@ func getLaneState(t *testing.T, rt *mock.Runtime, rcid cid.Cid, lane uint64) *La
 }
 
 func TestActor_UpdateChannelStateRedeem(t *testing.T) {
-	ctx := context.Background()
 	newVoucherAmt := big.NewInt(9)
 
 	t.Run("redeeming voucher updates correctly with one lane", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, ctx, 1)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 		var st1 State
 		rt.GetState(&st1)
 
@@ -310,10 +359,11 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 			LaneStates:      constructLaneStateAMT(t, rt, []*LaneState{&expLs}),
 		}
 		verifyState(t, rt, 1, expState)
+		actor.checkState(rt)
 	})
 
 	t.Run("redeems voucher for correct lane", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, ctx, 3)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 3)
 		var st1, st2 State
 		rt.GetState(&st1)
 
@@ -342,10 +392,11 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		assert.Equal(t, expToSend, st2.ToSend)
 		assert.Equal(t, ucp.Sv.Amount, lUpdated.Redeemed)
 		assert.Equal(t, ucp.Sv.Nonce, lUpdated.Nonce)
+		actor.checkState(rt)
 	})
 
 	t.Run("redeeming voucher fails on nonce reuse", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, ctx, 1)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 		var st1 State
 		rt.GetState(&st1)
 
@@ -364,13 +415,14 @@ func TestActor_UpdateChannelStateRedeem(t *testing.T) {
 		})
 
 		rt.Verify()
+		actor.checkState(rt)
 	})
 }
 
 func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	// Check that a lane merge correctly updates lane states
 	numLanes := 3
-	rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), numLanes)
+	rt, actor, sv := requireCreateChannelWithLanes(t, numLanes)
 
 	var st1 State
 	rt.GetState(&st1)
@@ -381,7 +433,7 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	mergeFromID := uint64(1)
 	mergeFrom := getLaneState(t, rt, st1.LaneStates, mergeFromID)
 
-	// Note sv.Amount = 4
+	// Note sv.Amount = 3
 	sv.Lane = mergeToID
 	mergeNonce := mergeTo.Nonce + 10
 
@@ -408,6 +460,7 @@ func TestActor_UpdateChannelStateMergeSuccess(t *testing.T) {
 	expState.ToSend = expSendAmt
 	expState.LaneStates = constructLaneStateAMT(t, rt, []*LaneState{&expMergeTo, &expMergeFrom, getLaneState(t, rt, st1.LaneStates, 2)})
 	verifyState(t, rt, numLanes, expState)
+	actor.checkState(rt)
 }
 
 func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
@@ -441,7 +494,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 2)
+			rt, actor, sv := requireCreateChannelWithLanes(t, 2)
 			if tc.balance > 0 {
 				rt.SetBalance(abi.NewTokenAmount(tc.balance))
 			}
@@ -468,7 +521,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		})
 	}
 	t.Run("When lane doesn't exist, fails with: voucher specifies invalid merge lane 999", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 2)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 2)
 
 		var st1 State
 		rt.GetState(&st1)
@@ -491,7 +544,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 	})
 
 	t.Run("Lane ID over max fails", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 
 		var st1 State
 		rt.GetState(&st1)
@@ -511,8 +564,8 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 
 func TestActor_UpdateChannelStateExtra(t *testing.T) {
 	mnum := builtin.MethodsPaych.UpdateChannelState
-	fakeParams := runtime.CBORBytes([]byte{1, 2, 3, 4})
-	expSendParams := &PaymentVerifyParams{fakeParams, nil}
+	fakeParams := cbg.CborBoolTrue
+	expSendParams := &cbg.Deferred{Raw: fakeParams}
 	otherAddr := tutil.NewIDAddr(t, 104)
 	ex := &ModVerifyParams{
 		Actor:  otherAddr,
@@ -521,7 +574,7 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 	}
 
 	t.Run("Succeeds if extra call succeeds", func(t *testing.T) {
-		rt, actor1, sv1 := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor1, sv1 := requireCreateChannelWithLanes(t, 1)
 		var st1 State
 		rt.GetState(&st1)
 		rt.SetCaller(st1.From, builtin.AccountActorCodeID)
@@ -534,9 +587,10 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 		rt.ExpectSend(otherAddr, mnum, expSendParams, big.Zero(), nil, exitcode.Ok)
 		rt.Call(actor1.UpdateChannelState, ucp)
 		rt.Verify()
+		actor1.checkState(rt)
 	})
 	t.Run("If Extra call fails, fails with: spend voucher verification failed", func(t *testing.T) {
-		rt, actor1, sv1 := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor1, sv1 := requireCreateChannelWithLanes(t, 1)
 		var st1 State
 		rt.GetState(&st1)
 		rt.SetCaller(st1.From, builtin.AccountActorCodeID)
@@ -555,7 +609,7 @@ func TestActor_UpdateChannelStateExtra(t *testing.T) {
 }
 
 func TestActor_UpdateChannelStateSettling(t *testing.T) {
-	rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
+	rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 
 	ep := abi.ChainEpoch(10)
 	rt.SetEpoch(ep)
@@ -602,13 +656,14 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 			assert.Equal(t, tc.expSettlingAt, newSt.SettlingAt)
 			assert.Equal(t, tc.expMinSettleHeight, newSt.MinSettleHeight)
 			ucp.Sv.Nonce = ucp.Sv.Nonce + 1
+			actor.checkState(rt)
 		})
 	}
 }
 
-func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
+func TestActor_UpdateChannelStateSecretHash(t *testing.T) {
 	t.Run("Succeeds with correct secret", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 		var st State
 		rt.GetState(&st)
 
@@ -622,25 +677,24 @@ func TestActor_UpdateChannelStateSecretPreimage(t *testing.T) {
 		ucp := &UpdateChannelStateParams{
 			Sv:     *sv,
 			Secret: []byte("Profesr"),
-			Proof:  nil,
 		}
-		ucp.Sv.SecretPreimage = []byte("ProfesrXXXXXXXXXXXXXXXXXXXXXXXXX")
+		ucp.Sv.SecretHash = []byte("ProfesrXXXXXXXXXXXXXXXXXXXXXXXXX")
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.ExpectVerifySignature(*ucp.Sv.Signature, st.To, voucherBytes(t, &ucp.Sv), nil)
 		rt.Call(actor.UpdateChannelState, ucp)
 		rt.Verify()
+		actor.checkState(rt)
 	})
 
 	t.Run("If bad secret preimage, fails with: incorrect secret!", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 		var st State
 		rt.GetState(&st)
 		ucp := &UpdateChannelStateParams{
 			Sv:     *sv,
 			Secret: []byte("Profesr"),
-			Proof:  nil,
 		}
-		ucp.Sv.SecretPreimage = append([]byte("Magneto"), make([]byte, 25)...)
+		ucp.Sv.SecretHash = append([]byte("Magneto"), make([]byte, 25)...)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.ExpectVerifySignature(*ucp.Sv.Signature, st.To, voucherBytes(t, &ucp.Sv), nil)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -654,7 +708,7 @@ func TestActor_Settle(t *testing.T) {
 	ep := abi.ChainEpoch(10)
 
 	t.Run("Settle adjusts SettlingAt", func(t *testing.T) {
-		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, _ := requireCreateChannelWithLanes(t, 1)
 		rt.SetEpoch(ep)
 		var st State
 		rt.GetState(&st)
@@ -667,10 +721,11 @@ func TestActor_Settle(t *testing.T) {
 		rt.GetState(&st)
 		assert.Equal(t, expSettlingAt, st.SettlingAt)
 		assert.Equal(t, abi.ChainEpoch(0), st.MinSettleHeight)
+		actor.checkState(rt)
 	})
 
 	t.Run("settle fails if called twice: channel already settling", func(t *testing.T) {
-		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, _ := requireCreateChannelWithLanes(t, 1)
 		rt.SetEpoch(ep)
 		var st State
 		rt.GetState(&st)
@@ -686,7 +741,7 @@ func TestActor_Settle(t *testing.T) {
 	})
 
 	t.Run("Settle changes SettleHeight again if MinSettleHeight is less", func(t *testing.T) {
-		rt, actor, sv := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
 		rt.SetEpoch(ep)
 		var st State
 		rt.GetState(&st)
@@ -713,12 +768,34 @@ func TestActor_Settle(t *testing.T) {
 		// SettlingAt should = MinSettleHeight, not epoch + SettleDelay.
 		rt.GetState(&newSt)
 		assert.Equal(t, ucp.Sv.MinSettleHeight, newSt.SettlingAt)
+		actor.checkState(rt)
+	})
+
+	t.Run("Voucher invalid after settling", func(t *testing.T) {
+		rt, actor, sv := requireCreateChannelWithLanes(t, 1)
+		rt.SetEpoch(ep)
+		var st State
+		rt.GetState(&st)
+
+		rt.SetCaller(st.From, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.Call(actor.Settle, nil)
+
+		rt.GetState(&st)
+		rt.SetEpoch(st.SettlingAt + 40)
+		ucp := &UpdateChannelStateParams{Sv: *sv}
+		rt.ExpectValidateCallerAddr(st.From, st.To)
+		rt.ExpectVerifySignature(*ucp.Sv.Signature, actor.payee, voucherBytes(t, &ucp.Sv), nil)
+		rt.ExpectAbort(ErrChannelStateUpdateAfterSettled, func() {
+			rt.Call(actor.UpdateChannelState, ucp)
+		})
+
 	})
 }
 
 func TestActor_Collect(t *testing.T) {
 	t.Run("Happy path", func(t *testing.T) {
-		rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
+		rt, actor, _ := requireCreateChannelWithLanes(t, 1)
 		currEpoch := abi.ChainEpoch(10)
 		rt.SetEpoch(currEpoch)
 		var st State
@@ -744,6 +821,7 @@ func TestActor_Collect(t *testing.T) {
 		rt.ExpectDeleteActor(st.From)
 		res := rt.Call(actor.Collect, nil)
 		assert.Nil(t, res)
+		actor.checkState(rt)
 	})
 
 	testCases := []struct {
@@ -756,7 +834,7 @@ func TestActor_Collect(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			rt, actor, _ := requireCreateChannelWithLanes(t, context.Background(), 1)
+			rt, actor, _ := requireCreateChannelWithLanes(t, 1)
 			currEpoch := abi.ChainEpoch(10)
 			rt.SetEpoch(currEpoch)
 			var st State
@@ -799,9 +877,10 @@ type laneParams struct {
 	from, to    addr.Address
 	amt         big.Int
 	lane, nonce uint64
+	merges      []Merge
 }
 
-func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes int) (*mock.Runtime, *pcActorHarness, *SignedVoucher) {
+func requireCreateChannelWithLanes(t *testing.T, numLanes int) (*mock.Runtime, *pcActorHarness, *SignedVoucher) {
 	paychAddr := tutil.NewIDAddr(t, 100)
 	payerAddr := tutil.NewIDAddr(t, 102)
 	payeeAddr := tutil.NewIDAddr(t, 103)
@@ -811,7 +890,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 	curEpoch := 2
 	hasher := func(data []byte) [32]byte { return [32]byte{} }
 
-	builder := mock.NewBuilder(ctx, paychAddr).
+	builder := mock.NewBuilder(paychAddr).
 		WithBalance(balance, received).
 		WithEpoch(abi.ChainEpoch(curEpoch)).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
@@ -842,7 +921,7 @@ func requireCreateChannelWithLanes(t *testing.T, ctx context.Context, numLanes i
 func requireAddNewLane(t *testing.T, rt *mock.Runtime, actor *pcActorHarness, params laneParams) *SignedVoucher {
 	sig := &crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte{0, 1, 2, 3, 4, 5, 6, 7}}
 	tl := abi.ChainEpoch(params.epochNum)
-	sv := SignedVoucher{ChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig}
+	sv := SignedVoucher{ChannelAddr: actor.addr, TimeLockMin: tl, TimeLockMax: math.MaxInt64, Lane: params.lane, Nonce: params.nonce, Amount: params.amt, Signature: sig, Merges: params.merges}
 	ucp := &UpdateChannelStateParams{Sv: sv}
 
 	rt.SetCaller(params.from, builtin.AccountActorCodeID)
@@ -862,15 +941,29 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 	ret := rt.Call(h.Actor.Constructor, params)
 	assert.Nil(h.t, ret)
 	rt.Verify()
-	verifyInitialState(t, rt, sender, receiver)
+
+	senderId, ok := rt.GetIdAddr(sender)
+	require.True(h.t, ok)
+
+	receiverId, ok := rt.GetIdAddr(receiver)
+	require.True(h.t, ok)
+
+	verifyInitialState(t, rt, senderId, receiverId)
+}
+
+func (h *pcActorHarness) checkState(rt *mock.Runtime) {
+	var st State
+	rt.GetState(&st)
+	_, msgs := CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
+	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
 	var st State
 	rt.GetState(&st)
-	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
-	assert.NoError(t, err)
-	expectedState := State{From: sender, To: receiver, ToSend: abi.NewTokenAmount(0), LaneStates: emptyArrCid}
+	emptyArray, err := adt.StoreEmptyArray(adt.AsStore(rt), LaneStatesAmtBitwidth)
+	require.NoError(t, err)
+	expectedState := State{From: sender, To: receiver, ToSend: abi.NewTokenAmount(0), LaneStates: emptyArray}
 	verifyState(t, rt, -1, expectedState)
 }
 
@@ -886,14 +979,14 @@ func verifyState(t *testing.T, rt *mock.Runtime, expLanes int, expectedState Sta
 		assertLaneStatesLength(t, rt, st.LaneStates, expLanes)
 		assert.True(t, reflect.DeepEqual(expectedState.LaneStates, st.LaneStates))
 	} else {
-		ecid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+		emptyArray, err := adt.StoreEmptyArray(adt.AsStore(rt), LaneStatesAmtBitwidth)
 		assert.NoError(t, err)
-		assert.Equal(t, st.LaneStates, ecid)
+		assert.Equal(t, st.LaneStates, emptyArray)
 	}
 }
 
 func voucherBytes(t *testing.T, sv *SignedVoucher) []byte {
-	bytes, err := sv.SigningBytes()
+	bytes, err := VoucherSigningBytes(sv)
 	require.NoError(t, err)
 	return bytes
 }

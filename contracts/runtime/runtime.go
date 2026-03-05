@@ -1,12 +1,8 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
-	"io"
 
-	cid "github.com/ipfs/go-cid"
-	"github.com/post-quantumqoin/address"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/cbor"
@@ -14,12 +10,18 @@ import (
 	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/post-quantumqoin/core-types/network"
 	"github.com/post-quantumqoin/core-types/rt"
+	cid "github.com/ipfs/go-cid"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime/proof"
 )
 
-// Runtime is the VM's internal runtime object.
-// this is everything that is accessible to actors, beyond parameters.
+// Interfaces for the runtime.
+// These interfaces are not aliased onto prior versions even if they match exactly.
+// Go's implicit interface satisfaction should mean that a single concrete type can satisfy
+// many versions at the same time.
+
+// Runtime is the interface to the execution environment for actor methods..
+// This is everything that is accessible to actors, beyond parameters.
 type Runtime interface {
 	// Information related to the current message being executed.
 	// When an actor invokes a method on another actor as a sub-call, these values reflect
@@ -138,6 +140,9 @@ type Runtime interface {
 
 	// Note events that may make debugging easier
 	Log(level rt.LogLevel, msg string, args ...interface{})
+
+	// BaseFee returns the basefee value in attoFIL per unit gas for the currently exectuting tipset.
+	BaseFee() abi.TokenAmount
 }
 
 // Store defines the storage module exposed to actors.
@@ -169,16 +174,20 @@ type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
 	// If the address is a public-key type address, it is used directly.
 	// If it's an ID-address, the actor is looked up in state. It must be an account actor, and the
-	// public key is obtained from it's state.
+	// public key is obtained from its state.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) error
 	// Hashes input data using blake2b with 256 bit output.
 	HashBlake2b(data []byte) [32]byte
 	// Computes an unsealed sector CID (CommD) from its constituent piece CIDs (CommPs) and sizes.
 	ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
+	// Deprecated and un-used.
 	VerifySeal(vi proof.SealVerifyInfo) error
 
-	BatchVerifySeals(vis map[address.Address][]proof.SealVerifyInfo) (map[address.Address][]bool, error)
+	BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo) (map[addr.Address][]bool, error)
+	VerifyAggregateSeals(aggregate proof.AggregateSealVerifyProofAndInfos) error
+
+	VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error
 
 	// Verifies a proof of spacetime.
 	VerifyPoSt(vi proof.WindowPoStVerifyInfo) error
@@ -219,48 +228,11 @@ type StateHandle interface {
 	// # Usage
 	// ```go
 	// var state SomeState
-	// ret := rt.StateTransaction(&state, func() (interface{}) {
-	//   // make some changes
-	//	 st.ImLoaded = True
-	//   return st.Thing, nil
+	// rt.StateTransaction(&state, func() {
+	// 	// make some changes
+	// 	state.ImLoaded = true
 	// })
-	// // state.ImLoaded = False // BAD!! state is readonly outside the lambda, it will panic
+	// // state.ImLoaded = false // BAD!! state is readonly outside the lambda, it will panic
 	// ```
 	StateTransaction(obj cbor.Er, f func())
 }
-
-// Result of checking two headers for a consensus fault.
-type ConsensusFault struct {
-	// Address of the miner at fault (always an ID address).
-	Target addr.Address
-	// Epoch of the fault, which is the higher epoch of the two blocks causing it.
-	Epoch abi.ChainEpoch
-	// Type of fault.
-	Type ConsensusFaultType
-}
-
-type ConsensusFaultType int64
-
-const (
-	//ConsensusFaultNone             ConsensusFaultType = 0
-	ConsensusFaultDoubleForkMining ConsensusFaultType = 1
-	ConsensusFaultParentGrinding   ConsensusFaultType = 2
-	ConsensusFaultTimeOffsetMining ConsensusFaultType = 3
-)
-
-// Wraps already-serialized bytes as CBOR-marshalable.
-type CBORBytes []byte
-
-func (b CBORBytes) MarshalCBOR(w io.Writer) error {
-	_, err := w.Write(b)
-	return err
-}
-
-func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
-	var c bytes.Buffer
-	_, err := c.ReadFrom(r)
-	*b = c.Bytes()
-	return err
-}
-
-type VMActor = rt.VMActor

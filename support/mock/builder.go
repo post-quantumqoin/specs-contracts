@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ipfs/go-cid"
-	"github.com/minio/blake2b-simd"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/network"
+	"github.com/ipfs/go-cid"
+	"github.com/minio/blake2b-simd"
 )
 
 // Build for fluent initialization of a mock runtime.

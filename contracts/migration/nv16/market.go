@@ -2,7 +2,7 @@ package nv16
 
 import (
 	"context"
-	"unicode/utf8"
+	// "unicode/utf8"
 
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -69,10 +69,8 @@ type cidSwap struct {
 
 // MapProposals converts proposals with invalid i.e. non-utf8 string label serializations into proposals with
 // byte label serializations.  For those proposals with
-//
-//	(1) a serialization that changed
-//	(2) a cid in pending proposals map
-//
+//   (1) a serialization that changed
+//   (2) a cid in pending proposals map
 // it returns a map from deal id to (old cid, new cid)
 func UpdateProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, map[int64]cidSwap, error) {
 	changedProposalCIDs := make(map[int64]cidSwap)
@@ -88,15 +86,15 @@ func UpdateProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid
 
 	var dealprop7 market7.DealProposal
 	err = proposals.ForEach(&dealprop7, func(key int64) error {
-		if utf8.ValidString(dealprop7.Label) {
-			return nil // no update needed
-		}
+		// if utf8.ValidString(dealprop7.Label) {
+		// 	return nil // no update needed
+		// }
 
 		// serialization of proposal updated here
-		newLabel, err := market.NewLabelFromBytes([]byte(dealprop7.Label))
-		if err != nil {
-			return err
-		}
+		// newLabel, err := market.NewLabelFromBytes([]byte(dealprop7.Label))
+		// if err != nil {
+		// 	return err
+		// }
 
 		dealprop8 := market.DealProposal{
 			PieceCID:             dealprop7.PieceCID,
@@ -104,7 +102,7 @@ func UpdateProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid
 			VerifiedDeal:         dealprop7.VerifiedDeal,
 			Client:               dealprop7.Client,
 			Provider:             dealprop7.Provider,
-			Label:                newLabel,
+			// Label:                newLabel,
 			StartEpoch:           dealprop7.StartEpoch,
 			EndEpoch:             dealprop7.EndEpoch,
 			StoragePricePerEpoch: dealprop7.StoragePricePerEpoch,

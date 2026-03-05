@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	cid "github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
@@ -20,6 +18,8 @@ import (
 	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/post-quantumqoin/core-types/network"
 	"github.com/post-quantumqoin/core-types/rt"
+	cid "github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/exported"
@@ -870,7 +870,7 @@ func (rt *Runtime) AddIDAddress(src addr.Address, target addr.Address) {
 }
 
 func (rt *Runtime) SetNewActorAddress(actAddr addr.Address) {
-	rt.require(actAddr.Protocol() == addr.Actor, "new actor address must be protocol: Actor, got protocol: %v", actAddr.Protocol())
+	rt.require(actAddr.Protocol() == addr.Contract, "new actor address must be protocol: Actor, got protocol: %v", actAddr.Protocol())
 	rt.newActorAddr = actAddr
 }
 

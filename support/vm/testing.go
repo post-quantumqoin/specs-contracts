@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ipfs/go-cid"
-	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/post-quantumqoin/address"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/dline"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	"github.com/ipfs/go-cid"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

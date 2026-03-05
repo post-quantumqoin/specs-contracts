@@ -8,9 +8,6 @@ import (
 	"reflect"
 	"runtime/debug"
 
-	"github.com/ipfs/go-cid"
-	"github.com/minio/blake2b-simd"
-	mh "github.com/multiformats/go-multihash"
 	"github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
@@ -19,7 +16,10 @@ import (
 	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/post-quantumqoin/core-types/network"
 	"github.com/post-quantumqoin/core-types/rt"
-	vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
+	// vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
+	"github.com/ipfs/go-cid"
+	"github.com/minio/blake2b-simd"
+	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
@@ -72,7 +72,7 @@ type topLevelContext struct {
 	gasUsed      int64
 	gasAvailable int64
 	// Temporary field to workaround test-vector limitations
-
+	// https://github.com/filecoin-project/specs-actors/issues/1454
 	fakeSyscallsAccessed bool
 }
 
@@ -103,7 +103,7 @@ func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage
 		allowSideEffects: true,
 		callerValidated:  false,
 		stateUsedObjs:    map[cbor.Marshaler]cid.Cid{},
-		stats:            vm2.NewCallStats(topLevel.statsSource),
+		stats:            NewCallStats(topLevel.statsSource),
 	}
 }
 
@@ -380,7 +380,7 @@ func (ic *invocationContext) NewActorAddress() address.Address {
 		panic(err)
 	}
 
-	actorAddress, err := address.NewActorAddress(buf.Bytes())
+	actorAddress, err := address.NewContractAddress(buf.Bytes())
 	if err != nil {
 		panic(err)
 	}

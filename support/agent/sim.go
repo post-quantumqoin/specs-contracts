@@ -7,28 +7,28 @@ import (
 	"strings"
 	"testing"
 
-	cid "github.com/ipfs/go-cid"
-	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/post-quantumqoin/address"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/dline"
 	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/post-quantumqoin/core-types/rt"
+	cid "github.com/ipfs/go-cid"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/power"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/reward"
 	"github.com/post-quantumqoin/specs-contracts/contracts/states"
-	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
-	adt2 "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	// "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 	"github.com/post-quantumqoin/specs-contracts/support/ipld"
 	"github.com/post-quantumqoin/specs-contracts/support/vm"
-	vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
 )
 
 // Sim is a simulation framework to exercise actor code in a network-like environment.
@@ -456,7 +456,7 @@ type SimVM interface {
 	SetStatsSource(stats vm2.StatsSource)
 	GetCallStats() map[vm2.MethodKey]*vm2.CallStats
 	GetEpoch() abi.ChainEpoch
-	Store() adt2.Store
+	Store() adt.Store
 	GetActor(addr address.Address) (*states.Actor, bool, error)
 	SetCirculatingSupply(supply big.Int)
 	GetActorImpls() map[cid.Cid]rt.VMActor

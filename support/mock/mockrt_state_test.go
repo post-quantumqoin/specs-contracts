@@ -4,11 +4,11 @@ import (
 	"io"
 	"testing"
 
-	"github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	"github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"

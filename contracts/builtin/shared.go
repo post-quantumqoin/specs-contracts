@@ -1,22 +1,66 @@
 package builtin
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
 	addr "github.com/post-quantumqoin/address"
-	abi "github.com/post-quantumqoin/core-types/abi"
-	exitcode "github.com/post-quantumqoin/core-types/exitcode"
-
-	runtime "github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+	"github.com/post-quantumqoin/core-types/abi"
+	"github.com/post-quantumqoin/core-types/big"
+	"github.com/post-quantumqoin/core-types/exitcode"
+	// builtin0 "github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	// builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	// builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/smoothing"
 )
 
 ///// Code shared by multiple built-in actors. /////
 
+// Default log2 of branching factor for HAMTs.
+// This value has been empirically chosen, but the optimal value for maps with different mutation profiles may differ.
+const DefaultHamtBitwidth = 5
+
+type BigFrac struct {
+	Numerator   big.Int
+	Denominator big.Int
+}
+
+// Wraps already-serialized bytes as CBOR-marshalable.
+type CBORBytes []byte
+
+func (b CBORBytes) MarshalCBOR(w io.Writer) error {
+	_, err := w.Write(b)
+	return err
+}
+
+func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
+	var c bytes.Buffer
+	_, err := c.ReadFrom(r)
+	*b = c.Bytes()
+	return err
+}
+
+// Aborts with an ErrIllegalState if predicate is not true.
+// This method is intended for use like an assertion.
+// Don't use this shorthand for states which are logically possible, as it will hide (non-)coverage of
+// the Abort call from code coverage metrics.
+func RequireState(rt runtime.Runtime, predicate bool, msg string, args ...interface{}) {
+	if !predicate {
+		rt.Abortf(exitcode.ErrIllegalState, msg, args...)
+	}
+}
+
 // Aborts with an ErrIllegalArgument if predicate is not true.
 func RequireParam(rt runtime.Runtime, predicate bool, msg string, args ...interface{}) {
+	RequirePredicate(rt, predicate, exitcode.ErrIllegalArgument, msg, args...)
+}
+
+// Aborts with `code` if predicate is not true.
+func RequirePredicate(rt runtime.Runtime, predicate bool, code exitcode.ExitCode, msg string, args ...interface{}) {
 	if !predicate {
-		rt.Abortf(exitcode.ErrIllegalArgument, msg, args...)
+		rt.Abortf(code, msg, args...)
 	}
 }
 
@@ -52,10 +96,22 @@ type MinerAddrs struct {
 	Worker       addr.Address
 	ControlAddrs []addr.Address
 }
+// type MinerAddrs = builtin0.MinerAddrs
+
+type DeferredCronEventParams struct {
+	EventPayload            []byte
+	RewardSmoothed          smoothing.FilterEstimate
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
+}
+// type DeferredCronEventParams = builtin6.DeferredCronEventParams
 
 type ConfirmSectorProofsParams struct {
-	Sectors []abi.SectorNumber
+	Sectors                 []abi.SectorNumber
+	RewardSmoothed          smoothing.FilterEstimate
+	RewardBaselinePower     abi.StoragePower
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
 }
+// type ConfirmSectorProofsParams = builtin6.ConfirmSectorProofsParams
 
 // ResolveToIDAddr resolves the given address to it's ID address form.
 // If an ID address for the given address dosen't exist yet, it tries to create one by sending a zero balance to the given address.
@@ -80,6 +136,14 @@ func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, er
 
 	return idAddr, nil
 }
+
+// Note: we could move this alias back to the mutually-importing packages that use it, now that they
+// can instead both alias the v2 version.
+type ApplyRewardParams struct {
+	Reward  abi.TokenAmount
+	Penalty abi.TokenAmount
+}
+// type ApplyRewardParams = builtin2.ApplyRewardParams
 
 // Discard is a helper
 type Discard struct{}

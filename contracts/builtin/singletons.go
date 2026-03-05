@@ -2,8 +2,6 @@ package builtin
 
 import (
 	addr "github.com/post-quantumqoin/address"
-
-	autil "github.com/post-quantumqoin/specs-contracts/contracts/util"
 )
 
 // Addresses for singleton system actors.
@@ -24,6 +22,8 @@ const FirstNonSingletonActorId = 100
 
 func mustMakeAddress(id uint64) addr.Address {
 	address, err := addr.NewIDAddress(id)
-	autil.AssertNoError(err)
+	if err != nil {
+		panic(err)
+	}
 	return address
 }
