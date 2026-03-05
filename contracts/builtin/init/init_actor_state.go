@@ -1,15 +1,14 @@
 package init
 
 import (
-	cid "github.com/ipfs/go-cid"
 	addr "github.com/post-quantumqoin/address"
-	abi "github.com/post-quantumqoin/core-types/abi"
+	"github.com/post-quantumqoin/core-types/abi"
+	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 
-	builtin "github.com/post-quantumqoin/specs-contracts/contracts/builtin"
-	autil "github.com/post-quantumqoin/specs-contracts/contracts/util"
-	adt "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
 type State struct {
@@ -18,12 +17,17 @@ type State struct {
 	NetworkName string
 }
 
-func ConstructState(addressMapRoot cid.Cid, networkName string) *State {
+func ConstructState(store adt.Store, networkName string) (*State, error) {
+	emptyAddressMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty map: %w", err)
+	}
+
 	return &State{
-		AddressMap:  addressMapRoot,
+		AddressMap:  emptyAddressMapCid,
 		NextID:      abi.ActorID(builtin.FirstNonSingletonActorId),
 		NetworkName: networkName,
-	}
+	}, nil
 }
 
 // ResolveAddress resolves an address to an ID-address, if possible.
@@ -41,21 +45,18 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 	}
 
 	// Lookup address.
-	m, err := adt.AsMap(store, s.AddressMap)
+	m, err := adt.AsMap(store, s.AddressMap, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return addr.Undef, false, xerrors.Errorf("failed to load address map: %w", err)
 	}
 
 	var actorID cbg.CborInt
-	found, err := m.Get(abi.AddrKey(address), &actorID)
-	if err != nil {
+	if found, err := m.Get(abi.AddrKey(address), &actorID); err != nil {
 		return addr.Undef, false, xerrors.Errorf("failed to get from address map: %w", err)
-	}
-	if found {
+	} else if found {
 		// Reconstruct address from the ActorID.
-		idAddr, err2 := addr.NewIDAddress(uint64(actorID))
-		autil.Assert(err2 == nil)
-		return idAddr, true, nil
+		idAddr, err := addr.NewIDAddress(uint64(actorID))
+		return idAddr, true, err
 	} else {
 		return addr.Undef, false, nil
 	}
@@ -67,7 +68,7 @@ func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.A
 	actorID := cbg.CborInt(s.NextID)
 	s.NextID++
 
-	m, err := adt.AsMap(store, s.AddressMap)
+	m, err := adt.AsMap(store, s.AddressMap, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return addr.Undef, xerrors.Errorf("failed to load address map: %w", err)
 	}
@@ -82,6 +83,5 @@ func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.A
 	s.AddressMap = amr
 
 	idAddr, err := addr.NewIDAddress(uint64(actorID))
-	autil.Assert(err == nil)
-	return idAddr, nil
+	return idAddr, err
 }

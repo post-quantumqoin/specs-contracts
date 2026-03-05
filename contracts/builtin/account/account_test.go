@@ -1,17 +1,11 @@
 package account_test
 
 import (
-	"context"
+	"strings"
 	"testing"
 
-	"github.com/post-quantumqoin/address"
-	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/stretchr/testify/assert"
 
-	builtin "github.com/post-quantumqoin/specs-contracts/contracts/builtin"
-	account "github.com/post-quantumqoin/specs-contracts/contracts/builtin/account"
-	mock "github.com/post-quantumqoin/specs-contracts/support/mock"
-	tutil "github.com/post-quantumqoin/specs-contracts/support/testing"
 )
 
 type constructorTestCase struct {
@@ -28,7 +22,7 @@ func TestAccountactor(t *testing.T) {
 	actor := account.Actor{}
 
 	receiver := tutil.NewIDAddr(t, 100)
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	testCases := []constructorTestCase{
 		{
@@ -67,6 +61,8 @@ func TestAccountactor(t *testing.T) {
 				rt.ExpectValidateCallerAny()
 				pubkeyAddress := rt.Call(actor.PubkeyAddress, nil).(*address.Address)
 				assert.Equal(t, &tc.addr, pubkeyAddress)
+
+				checkState(t, rt)
 			} else {
 				rt.ExpectAbort(tc.exitCode, func() {
 					rt.Call(actor.Constructor, &tc.addr)
@@ -75,4 +71,13 @@ func TestAccountactor(t *testing.T) {
 			rt.Verify()
 		})
 	}
+}
+
+func checkState(t *testing.T, rt *mock.Runtime) {
+	testAddress, err := address.NewIDAddress(1000)
+	require.NoError(t, err)
+	var st account.State
+	rt.GetState(&st)
+	_, msgs := account.CheckStateInvariants(&st, testAddress)
+	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
