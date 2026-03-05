@@ -9,7 +9,6 @@ import (
 
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
@@ -19,6 +18,7 @@ import (
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/power"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/reward"
+	"github.com/ipfs/go-cid"
 )
 
 type DealClientConfig struct {

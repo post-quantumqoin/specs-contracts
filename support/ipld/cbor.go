@@ -3,9 +3,9 @@ package ipld
 import (
 	"bytes"
 
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/cbor"
+	"github.com/ipfs/go-cid"
 )
 
 // Marshals an object to bytes for storing in state.

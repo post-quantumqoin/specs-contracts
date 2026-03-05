@@ -1,11 +1,10 @@
 package testing
 
 import (
-	"math/rand"
-	"testing"
-
 	addr "github.com/post-quantumqoin/address"
 	"github.com/stretchr/testify/require"
+	"math/rand"
+	"testing"
 )
 
 func NewIDAddr(t testing.TB, id uint64) addr.Address {
@@ -33,7 +32,7 @@ func NewBLSAddr(t testing.TB, seed int64) addr.Address {
 }
 
 func NewActorAddr(t testing.TB, data string) addr.Address {
-	address, err := addr.NewActorAddress([]byte(data))
+	address, err := addr.NewContractAddress([]byte(data))
 	require.NoError(t, err)
 	return address
 }

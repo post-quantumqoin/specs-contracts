@@ -18,7 +18,9 @@ func NewADTStore(ctx context.Context) adt.Store {
 	return adt.WrapBlockStore(ctx, NewBlockStoreInMemory())
 }
 
+//
 // A basic in-memory block store.
+//
 type BlockStoreInMemory struct {
 	data map[cid.Cid]block.Block
 }
@@ -42,7 +44,9 @@ func (mb *BlockStoreInMemory) Put(b block.Block) error {
 	return nil
 }
 
+//
 // Synchronized block store wrapper.
+//
 type SyncBlockStore struct {
 	bs ipldcbor.IpldBlockstore
 	mu sync.Mutex
@@ -68,7 +72,9 @@ func (ss *SyncBlockStore) Put(b block.Block) error {
 	return ss.bs.Put(b)
 }
 
+//
 // Metric-recording block store wrapper.
+//
 type MetricsBlockStore struct {
 	bs         ipldcbor.IpldBlockstore
 	Writes     uint64

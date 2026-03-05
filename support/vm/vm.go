@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
@@ -13,7 +12,8 @@ import (
 	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/post-quantumqoin/core-types/network"
 	"github.com/post-quantumqoin/core-types/rt"
-	vm2 "github.com/post-quantumqoin/specs-contracts/support/vm"
+	// vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
+	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
@@ -55,8 +55,8 @@ type VM struct {
 
 // VM types
 
-// type ActorImplLookup map[cid.Cid]runtime.VMActor
-type ActorImplLookup vm2.ActorImplLookup
+type ActorImplLookup map[cid.Cid]runtime.VMActor
+// type ActorImplLookup vm2.ActorImplLookup
 
 type InternalMessage struct {
 	from   address.Address

@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 	"github.com/post-quantumqoin/address"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/dline"
+	"github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"

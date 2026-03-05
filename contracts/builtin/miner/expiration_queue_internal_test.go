@@ -5,19 +5,20 @@ import (
 
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestExpirations(t *testing.T) {
-	quant := QuantSpec{unit: 10, offset: 3}
+	quant := builtin.NewQuantSpec(10, 3)
 	sectors := []*SectorOnChainInfo{
 		testSector(7, 1, 0, 0, 0),
 		testSector(8, 2, 0, 0, 0),
 		testSector(14, 3, 0, 0, 0),
 		testSector(13, 4, 0, 0, 0),
 	}
-	result := groupSectorsByExpiration(2048, sectors, quant)
+	result := groupNewSectorsByDeclaredExpiration(2048, sectors, quant)
 	expected := []*sectorEpochSet{{
 		epoch:   13,
 		sectors: []uint64{1, 2, 4},
@@ -37,7 +38,7 @@ func TestExpirations(t *testing.T) {
 
 func TestExpirationsEmpty(t *testing.T) {
 	sectors := []*SectorOnChainInfo{}
-	result := groupSectorsByExpiration(2048, sectors, NoQuantization)
+	result := groupNewSectorsByDeclaredExpiration(2048, sectors, builtin.NoQuantization)
 	expected := []sectorEpochSet{}
 	require.Equal(t, expected, result)
 }

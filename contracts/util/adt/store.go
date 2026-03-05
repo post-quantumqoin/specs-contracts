@@ -3,10 +3,11 @@ package adt
 import (
 	"context"
 
+	"github.com/post-quantumqoin/core-types/cbor"
+	"github.com/post-quantumqoin/core-types/exitcode"
+	// adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	cid "github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
-	"github.com/post-quantumqoin/core-types/cbor"
-	exitcode "github.com/post-quantumqoin/core-types/exitcode"
 
 	vmr "github.com/post-quantumqoin/specs-contracts/contracts/runtime"
 )
@@ -23,6 +24,11 @@ func WrapStore(ctx context.Context, store ipldcbor.IpldStore) Store {
 		ctx:       ctx,
 		IpldStore: store,
 	}
+}
+
+// Adapts a block store as an ADT store.
+func WrapBlockStore(ctx context.Context, bs ipldcbor.IpldBlockstore) Store {
+	return WrapStore(ctx, ipldcbor.NewCborStore(bs))
 }
 
 type wstore struct {
@@ -55,7 +61,7 @@ func (r rtStore) Context() context.Context {
 
 func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
 	// The Go context is (un/fortunately?) dropped here.
-	// See https://github.com/post-quantumqoin/specs-contracts/issues/140
+	// See https://github.com/filecoin-project/specs-actors/issues/140
 	if !r.StoreGet(c, out.(cbor.Unmarshaler)) {
 		r.Abortf(exitcode.ErrNotFound, "not found")
 	}
@@ -64,6 +70,6 @@ func (r rtStore) Get(_ context.Context, c cid.Cid, out interface{}) error {
 
 func (r rtStore) Put(_ context.Context, v interface{}) (cid.Cid, error) {
 	// The Go context is (un/fortunately?) dropped here.
-	// See https://github.com/post-quantumqoin/specs-contracts/issues/140
+	// See https://github.com/filecoin-project/specs-actors/issues/140
 	return r.StorePut(v.(cbor.Marshaler)), nil
 }

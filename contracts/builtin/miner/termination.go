@@ -3,7 +3,7 @@ package miner
 import (
 	"sort"
 
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 )
 

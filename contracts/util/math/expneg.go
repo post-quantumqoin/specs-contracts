@@ -1,9 +1,7 @@
-package reward
+package math
 
 import (
 	"math/big"
-
-	"github.com/post-quantumqoin/specs-contracts/contracts/util/math"
 )
 
 var (
@@ -27,7 +25,7 @@ func init() {
 		"-115682590513835356866803355398940131328",
 		"340282366920938463463374607431768211456",
 	}
-	expNumCoef = math.Parse(num)
+	expNumCoef = Parse(num)
 
 	deno := []string{
 		"1225524182432722209606361",
@@ -45,19 +43,19 @@ func init() {
 		"224599776407103106596571252037123047424",
 		"340282366920938463463374607431768211456",
 	}
-	expDenoCoef = math.Parse(deno)
+	expDenoCoef = Parse(deno)
 }
 
-// expneg accepts x in Q.128 format and computes e^-x.
+// ExpNeg accepts x in Q.128 format and computes e^-x.
 // It is most precise within [0, 1.725) range, where error is less than 3.4e-30.
 // Over the [0, 5) range its error is less than 4.6e-15.
 // Output is in Q.128 format.
-func expneg(x *big.Int) *big.Int {
+func ExpNeg(x *big.Int) *big.Int {
 	// exp is approximated by rational function
 	// polynomials of the rational function are evaluated using Horner's method
-	num := math.Polyval(expNumCoef, x)   // Q.128
-	deno := math.Polyval(expDenoCoef, x) // Q.128
+	num := Polyval(expNumCoef, x)   // Q.128
+	deno := Polyval(expDenoCoef, x) // Q.128
 
-	num = num.Lsh(num, math.Precision) // Q.256
-	return num.Div(num, deno)          // Q.256 / Q.128 => Q.128
+	num = num.Lsh(num, Precision128) // Q.256
+	return num.Div(num, deno)        // Q.256 / Q.128 => Q.128
 }

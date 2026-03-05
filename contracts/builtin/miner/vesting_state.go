@@ -3,6 +3,8 @@ package miner
 import (
 	"sort"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 )
@@ -48,12 +50,12 @@ func (v *VestingFunds) addLockedFunds(currEpoch abi.ChainEpoch, vestingSum abi.T
 	vestPeriod := big.NewInt(int64(spec.VestPeriod))
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quantizeUp(e, spec.Quantization, provingPeriodStart)
+		vestEpoch := builtin.QuantizeUp(e, spec.Quantization, provingPeriodStart)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign
 		if elapsed < spec.VestPeriod {
-			// Linear vesting, PARAM_FINISH
+			// Linear vesting
 			targetVest = big.Div(big.Mul(vestingSum, big.NewInt(int64(elapsed))), vestPeriod)
 		} else {
 			targetVest = vestingSum

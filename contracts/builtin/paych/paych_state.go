@@ -1,10 +1,10 @@
 package paych
 
 import (
-	"github.com/ipfs/go-cid"
 	addr "github.com/post-quantumqoin/address"
-	abi "github.com/post-quantumqoin/core-types/abi"
-	big "github.com/post-quantumqoin/core-types/big"
+	"github.com/post-quantumqoin/core-types/abi"
+	"github.com/post-quantumqoin/core-types/big"
+	"github.com/ipfs/go-cid"
 )
 
 // A given payment channel actor is established by From
@@ -35,11 +35,7 @@ type LaneState struct {
 	Nonce    uint64
 }
 
-// Specifies which `Lane`s to be merged with what `Nonce` on channelUpdate
-type Merge struct {
-	Lane  uint64
-	Nonce uint64
-}
+const LaneStatesAmtBitwidth = 3
 
 func ConstructState(from addr.Address, to addr.Address, emptyArrCid cid.Cid) *State {
 	return &State{

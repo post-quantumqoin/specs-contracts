@@ -1,15 +1,15 @@
 package init
 
 import (
-	cid "github.com/ipfs/go-cid"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	// init0 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/init"
+	cid "github.com/ipfs/go-cid"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
-	autil "github.com/post-quantumqoin/specs-contracts/contracts/util"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
@@ -39,13 +39,12 @@ var _ runtime.VMActor = Actor{}
 type ConstructorParams struct {
 	NetworkName string
 }
+// type ConstructorParams = init0.ConstructorParams
 
 func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
+	st, err := ConstructState(adt.AsStore(rt), params.NetworkName)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
-
-	st := ConstructState(emptyMap, params.NetworkName)
 	rt.StateCreate(st)
 	return nil
 }
@@ -54,16 +53,18 @@ type ExecParams struct {
 	CodeCID           cid.Cid `checked:"true"` // invalid CIDs won't get committed to the state tree
 	ConstructorParams []byte
 }
+// type ExecParams = init0.ExecParams
 
 type ExecReturn struct {
 	IDAddress     addr.Address // The canonical ID-based address for the actor.
 	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 }
+// type ExecReturn = init0.ExecReturn
 
 func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeCID, ok := rt.GetActorCodeCID(rt.Caller())
-	autil.AssertMsg(ok, "no code for actor at %s", rt.Caller())
+	builtin.RequireState(rt, ok, "no code for caller at %s", rt.Caller())
 	if !canExec(callerCodeCID, params.CodeCID) {
 		rt.Abortf(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}
@@ -88,10 +89,10 @@ func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.CreateActor(params.CodeCID, idAddr)
 
 	// Invoke constructor.
-	code := rt.Send(idAddr, builtin.MethodConstructor, runtime.CBORBytes(params.ConstructorParams), rt.ValueReceived(), &builtin.Discard{})
+	code := rt.Send(idAddr, builtin.MethodConstructor, builtin.CBORBytes(params.ConstructorParams), rt.ValueReceived(), &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "constructor failed")
 
-	return &ExecReturn{idAddr, uniqueAddress}
+	return &ExecReturn{IDAddress: idAddr, RobustAddress: uniqueAddress}
 }
 
 func canExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {

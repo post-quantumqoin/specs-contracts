@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
+	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

@@ -6,11 +6,11 @@ import (
 
 	vm7 "github.com/post-quantumqoin/specs-contracts/support/vm"
 
-	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/post-quantumqoin/core-types/abi"
-	"github.com/post-quantumqoin/specs-contracts/contracts/migration/nv16"
-	adt7 "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 	ipld2 "github.com/post-quantumqoin/specs-contracts/support/ipld"
+	adt7 "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	"github.com/post-quantumqoin/specs-contracts/contracts/migration/nv16"
+	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"

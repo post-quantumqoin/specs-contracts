@@ -10,10 +10,8 @@ import (
 
 	"github.com/post-quantumqoin/core-types/rt"
 
-	"github.com/post-quantumqoin/specs-contracts/contracts/states"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
-
-	"testing"
+	"github.com/post-quantumqoin/specs-contracts/contracts/states"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/exported"
@@ -22,6 +20,7 @@ import (
 	"github.com/post-quantumqoin/specs-contracts/contracts/migration/nv16"
 	"github.com/post-quantumqoin/specs-contracts/support/ipld"
 	vm8 "github.com/post-quantumqoin/specs-contracts/support/vm"
+	"testing"
 
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"

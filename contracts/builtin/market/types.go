@@ -1,10 +1,10 @@
 package market
 
 import (
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/core-types/abi"
-
 	. "github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+
+	"github.com/ipfs/go-cid"
 )
 
 // A specialization of a array to deals.
@@ -15,7 +15,7 @@ type DealArray struct {
 
 // Interprets a store as balance table with root `r`.
 func AsDealProposalArray(s Store, r cid.Cid) (*DealArray, error) {
-	a, err := AsArray(s, r)
+	a, err := AsArray(s, r, ProposalsAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +38,8 @@ func (t *DealArray) Set(k abi.DealID, value *DealProposal) error {
 	return t.Array.Set(uint64(k), value)
 }
 
-func (t *DealArray) Delete(key uint64) error {
-	return t.Array.Delete(key)
+func (t *DealArray) Delete(id abi.DealID) error {
+	return t.Array.Delete(uint64(id))
 }
 
 // A specialization of a array to deals.
@@ -48,9 +48,15 @@ type DealMetaArray struct {
 	*Array
 }
 
+type DealState struct {
+	SectorStartEpoch abi.ChainEpoch // -1 if not yet included in proven sector
+	LastUpdatedEpoch abi.ChainEpoch // -1 if deal state never updated
+	SlashEpoch       abi.ChainEpoch // -1 if deal never slashed
+}
+
 // Interprets a store as balance table with root `r`.
 func AsDealStateArray(s Store, r cid.Cid) (*DealMetaArray, error) {
-	dsa, err := AsArray(s, r)
+	dsa, err := AsArray(s, r, StatesAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +78,9 @@ func (t *DealMetaArray) Get(id abi.DealID) (*DealState, bool, error) {
 	}
 	if !found {
 		return &DealState{
-			SectorStartEpoch: epochUndefined,
-			LastUpdatedEpoch: epochUndefined,
-			SlashEpoch:       epochUndefined,
+			SectorStartEpoch: EpochUndefined,
+			LastUpdatedEpoch: EpochUndefined,
+			SlashEpoch:       EpochUndefined,
 		}, false, nil
 	}
 	return &value, true, nil

@@ -4,9 +4,8 @@ import (
 	"math"
 	"sort"
 
+	"github.com/post-quantumqoin/bitset"
 	"golang.org/x/xerrors"
-
-	bitfield "github.com/post-quantumqoin/bitset"
 )
 
 // Maps deadlines to partition maps.
@@ -79,7 +78,7 @@ func (dm DeadlineSectorMap) Deadlines() []uint64 {
 		deadlines = append(deadlines, dlIdx)
 	}
 	sort.Slice(deadlines, func(i, j int) bool {
-		return i < j
+		return deadlines[i] < deadlines[j]
 	})
 	return deadlines
 }
@@ -135,7 +134,7 @@ func (pm PartitionSectorMap) Partitions() []uint64 {
 		partitions = append(partitions, partIdx)
 	}
 	sort.Slice(partitions, func(i, j int) bool {
-		return i < j
+		return partitions[i] < partitions[j]
 	})
 	return partitions
 }

@@ -7,18 +7,18 @@ import (
 	"testing"
 
 	"github.com/post-quantumqoin/address"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/crypto"
 	"github.com/post-quantumqoin/core-types/dline"
 	"github.com/post-quantumqoin/core-types/exitcode"
 	xc "github.com/post-quantumqoin/core-types/exitcode"
+	miner0 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	initactor "github.com/post-quantumqoin/specs-contracts/contracts/builtin/init"
 	market7 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/market"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
-	miner0 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
 	power7 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/power"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime/proof"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
@@ -303,7 +303,7 @@ func publishDeal(t *testing.T, v *vm7.VM, provider, dealClient, minerID address.
 		VerifiedDeal:         verifiedDeal,
 		Client:               dealClient,
 		Provider:             minerID,
-		Label:                dealLabel,
+		// Label:                dealLabel,
 		StartEpoch:           dealStart,
 		EndEpoch:             dealStart + dealLifetime,
 		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),

@@ -1,12 +1,14 @@
 package system
 
 import (
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/cbor"
+	"github.com/post-quantumqoin/core-types/exitcode"
+	"github.com/ipfs/go-cid"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
 type Actor struct{}
@@ -33,9 +35,8 @@ var _ runtime.VMActor = Actor{}
 
 func (a Actor) Constructor(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
-
-	rt.StateCreate(&State{})
+	st, err := ConstructState(adt.AsStore(rt))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
+	rt.StateCreate(st)
 	return nil
 }
-
-type State struct{}

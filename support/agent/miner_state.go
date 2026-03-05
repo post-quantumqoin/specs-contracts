@@ -3,25 +3,24 @@ package agent
 import (
 	"context"
 
-	cid "github.com/ipfs/go-cid"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/dline"
-	miner4 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
-	miner5 "github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/miner"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
+	cid "github.com/ipfs/go-cid"
 )
 
 type MinerStateV4 struct {
 	Root cid.Cid
 	Ctx  context.Context
-	st   *miner4.State
+	st   *miner.State
 }
 
-func (m *MinerStateV4) state(store adt.Store) (*miner4.State, error) {
+func (m *MinerStateV4) state(store adt.Store) (*miner.State, error) {
 	if m.st == nil {
-		var st miner4.State
+		var st miner.State
 		err := store.Get(m.Ctx, m.Root, &st)
 		if err != nil {
 			return nil, err
@@ -100,7 +99,7 @@ func (m *MinerStateV4) LoadDeadlineState(store adt.Store, dlIdx uint64) (SimDead
 }
 
 type DeadlineStateV4 struct {
-	deadline *miner4.Deadline
+	deadline *miner.Deadline
 }
 
 func (d *DeadlineStateV4) LoadPartition(store adt.Store, partIdx uint64) (SimPartitionState, error) {
@@ -112,7 +111,7 @@ func (d *DeadlineStateV4) LoadPartition(store adt.Store, partIdx uint64) (SimPar
 }
 
 type PartitionStateV4 struct {
-	partition *miner4.Partition
+	partition *miner.Partition
 }
 
 func (p *PartitionStateV4) Terminated() bitfield.BitField {
@@ -120,7 +119,7 @@ func (p *PartitionStateV4) Terminated() bitfield.BitField {
 }
 
 type SectorInfoV4 struct {
-	info *miner4.SectorOnChainInfo
+	info *miner.SectorOnChainInfo
 }
 
 func (s *SectorInfoV4) Expiration() abi.ChainEpoch {
@@ -129,13 +128,13 @@ func (s *SectorInfoV4) Expiration() abi.ChainEpoch {
 
 type MinerStateV5 struct {
 	Root cid.Cid
-	st   *miner5.State
+	st   *miner.State
 	Ctx  context.Context
 }
 
-func (m *MinerStateV5) state(store adt.Store) (*miner5.State, error) {
+func (m *MinerStateV5) state(store adt.Store) (*miner.State, error) {
 	if m.st == nil {
-		var st miner5.State
+		var st miner.State
 		err := store.Get(m.Ctx, m.Root, &st)
 		if err != nil {
 			return nil, err
@@ -214,7 +213,7 @@ func (m *MinerStateV5) LoadDeadlineState(store adt.Store, dlIdx uint64) (SimDead
 }
 
 type DeadlineStateV5 struct {
-	deadline *miner5.Deadline
+	deadline *miner.Deadline
 }
 
 func (d *DeadlineStateV5) LoadPartition(store adt.Store, partIdx uint64) (SimPartitionState, error) {
@@ -226,7 +225,7 @@ func (d *DeadlineStateV5) LoadPartition(store adt.Store, partIdx uint64) (SimPar
 }
 
 type PartitionStateV5 struct {
-	partition *miner5.Partition
+	partition *miner.Partition
 }
 
 func (p *PartitionStateV5) Terminated() bitfield.BitField {
@@ -234,7 +233,7 @@ func (p *PartitionStateV5) Terminated() bitfield.BitField {
 }
 
 type SectorInfoV5 struct {
-	info *miner5.SectorOnChainInfo
+	info *miner.SectorOnChainInfo
 }
 
 func (s *SectorInfoV5) Expiration() abi.ChainEpoch {

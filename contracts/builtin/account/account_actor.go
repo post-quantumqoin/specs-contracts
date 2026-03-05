@@ -1,14 +1,15 @@
 package account
 
 import (
-	"github.com/ipfs/go-cid"
 	addr "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/cbor"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	"github.com/ipfs/go-cid"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+
 )
 
 type Actor struct{}
@@ -41,6 +42,7 @@ func (a Actor) Constructor(rt runtime.Runtime, address *addr.Address) *abi.Empty
 	switch address.Protocol() {
 	case addr.SECP256K1:
 	case addr.BLS:
+	case addr.PQC:
 		break // ok
 	default:
 		rt.Abortf(exitcode.ErrIllegalArgument, "address must use BLS or SECP protocol, got %v", address.Protocol())

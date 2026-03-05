@@ -4,8 +4,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/core-types/rt"
+	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 )
 

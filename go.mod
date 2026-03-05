@@ -1,23 +1,22 @@
 module github.com/post-quantumqoin/specs-contracts
 
-go 1.21
+go 1.22.2
 
 require (
-	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0
-	github.com/filecoin-project/go-hamt-ipld v0.1.5
+	github.com/filecoin-project/go-amt-ipld/v4 v4.2.0
+	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-ipld-cbor v0.0.6
-	github.com/ipfs/go-ipld-format v0.0.2
+	github.com/ipfs/go-ipld-format v0.3.0
 	github.com/ipld/go-car v0.1.0
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
 	github.com/minio/sha256-simd v1.0.1
 	github.com/multiformats/go-multibase v0.0.3
 	github.com/multiformats/go-multihash v0.2.1
-	github.com/pkg/errors v0.9.1
 	github.com/post-quantumqoin/address v0.1.0
 	github.com/post-quantumqoin/bitset v0.1.1
-	github.com/post-quantumqoin/core-types v0.4.1
+	github.com/post-quantumqoin/core-types v0.4.3
 	github.com/stretchr/testify v1.7.0
 	github.com/whyrusleeping/cbor-gen v0.1.0
 	github.com/xorcare/golden v0.6.0
@@ -30,10 +29,10 @@ require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
-	github.com/ipfs/bbloom v0.0.1 // indirect
+	github.com/ipfs/bbloom v0.0.4 // indirect
 	github.com/ipfs/go-blockservice v0.1.0 // indirect
-	github.com/ipfs/go-datastore v0.0.5 // indirect
-	github.com/ipfs/go-ipfs-blockstore v0.0.1 // indirect
+	github.com/ipfs/go-datastore v0.3.1 // indirect
+	github.com/ipfs/go-ipfs-blockstore v0.1.0 // indirect
 	github.com/ipfs/go-ipfs-ds-help v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
@@ -64,4 +63,8 @@ require (
 	lukechampine.com/blake3 v1.1.6 // indirect
 )
 
-replace github.com/ipld/go-ipld-prime => github.com/ipld/go-ipld-prime v0.0.2-0.20191108012745-28a82f04c785 // indirect
+replace github.com/ipld/go-ipld-prime => github.com/ipld/go-ipld-prime v0.0.2-0.20191108012745-28a82f04c785
+
+replace github.com/ipfs/go-ipld-format => github.com/ipfs/go-ipld-format v0.0.2
+
+replace github.com/ipfs/go-ipld-cbor => github.com/ipfs/go-ipld-cbor v0.0.5

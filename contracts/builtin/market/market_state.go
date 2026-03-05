@@ -3,23 +3,17 @@ package market
 import (
 	"bytes"
 
+	"github.com/post-quantumqoin/core-types/abi"
+	"github.com/post-quantumqoin/core-types/big"
+	"github.com/post-quantumqoin/core-types/exitcode"
 	"github.com/ipfs/go-cid"
-	abi "github.com/post-quantumqoin/core-types/abi"
-	big "github.com/post-quantumqoin/core-types/big"
-	exitcode "github.com/post-quantumqoin/core-types/exitcode"
 	xerrors "golang.org/x/xerrors"
 
-	. "github.com/post-quantumqoin/specs-contracts/contracts/util"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
-const epochUndefined = abi.ChainEpoch(-1)
-
-// Market mutations
-// add / rm balance
-// pub deal (always provider)
-// activate deal (miner)
-// end deal (miner terminate, expire(no activation))
+const EpochUndefined = abi.ChainEpoch(-1)
 
 // BalanceLockingReason is the reason behind locking an amount.
 type BalanceLockingReason int
@@ -30,13 +24,21 @@ const (
 	ProviderCollateral
 )
 
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
+const ProposalsAmtBitwidth = 5
+const StatesAmtBitwidth = 6
+
 type State struct {
+	// Proposals are deals that have been proposed and not yet cleaned up after expiry or termination.
 	Proposals cid.Cid // AMT[DealID]DealProposal
-	States    cid.Cid // AMT[DealID]DealState
+	// States contains state for deals that have been activated and not yet cleaned up after expiry or termination.
+	// After expiration, the state exists until the proposal is cleaned up too.
+	// Invariant: keys(States) ⊆ keys(Proposals).
+	States cid.Cid // AMT[DealID]DealState
 
 	// PendingProposals tracks dealProposals that have not yet reached their deal start date.
 	// We track them here to ensure that miners can't publish the same deal proposal twice
-	PendingProposals cid.Cid // HAMT[DealCid]DealProposal
+	PendingProposals cid.Cid // Set[DealCid]
 
 	// Total amount held in escrow, indexed by actor address (including both locked and unlocked amounts).
 	EscrowTable cid.Cid // BalanceTable
@@ -60,21 +62,43 @@ type State struct {
 	TotalClientStorageFee abi.TokenAmount
 }
 
-func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
+func ConstructState(store adt.Store) (*State, error) {
+	emptyProposalsArrayCid, err := adt.StoreEmptyArray(store, ProposalsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty array: %w", err)
+	}
+	emptyStatesArrayCid, err := adt.StoreEmptyArray(store, StatesAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty states array: %w", err)
+	}
+
+	emptyPendingProposalsMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty map: %w", err)
+	}
+	emptyDealOpsHamtCid, err := StoreEmptySetMultimap(store, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty multiset: %w", err)
+	}
+	emptyBalanceTableCid, err := adt.StoreEmptyMap(store, adt.BalanceTableBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty balance table: %w", err)
+	}
+
 	return &State{
-		Proposals:        emptyArrayCid,
-		States:           emptyArrayCid,
-		PendingProposals: emptyMapCid,
-		EscrowTable:      emptyMapCid,
-		LockedTable:      emptyMapCid,
+		Proposals:        emptyProposalsArrayCid,
+		States:           emptyStatesArrayCid,
+		PendingProposals: emptyPendingProposalsMapCid,
+		EscrowTable:      emptyBalanceTableCid,
+		LockedTable:      emptyBalanceTableCid,
 		NextID:           abi.DealID(0),
-		DealOpsByEpoch:   emptyMSetCid,
+		DealOpsByEpoch:   emptyDealOpsHamtCid,
 		LastCron:         abi.ChainEpoch(-1),
 
 		TotalClientLockedCollateral:   abi.NewTokenAmount(0),
 		TotalProviderLockedCollateral: abi.NewTokenAmount(0),
 		TotalClientStorageFee:         abi.NewTokenAmount(0),
-	}
+	}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,21 +108,21 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount, nextEpoch abi.ChainEpoch, removeDeal bool) {
 	amountSlashed = abi.NewTokenAmount(0)
 
-	everUpdated := state.LastUpdatedEpoch != epochUndefined
-	everSlashed := state.SlashEpoch != epochUndefined
+	everUpdated := state.LastUpdatedEpoch != EpochUndefined
+	everSlashed := state.SlashEpoch != EpochUndefined
 
-	Assert(!everUpdated || (state.LastUpdatedEpoch <= epoch)) // if the deal was ever updated, make sure it didn't happen in the future
+	builtin.RequireState(rt, !everUpdated || (state.LastUpdatedEpoch <= epoch), "deal updated at future epoch %d", state.LastUpdatedEpoch)
 
 	// This would be the case that the first callback somehow triggers before it is scheduled to
 	// This is expected not to be able to happen
 	if deal.StartEpoch > epoch {
-		return amountSlashed, epochUndefined, false
+		return amountSlashed, EpochUndefined, false
 	}
 
 	paymentEndEpoch := deal.EndEpoch
 	if everSlashed {
-		AssertMsg(epoch >= state.SlashEpoch, "current epoch less than slash epoch")
-		Assert(state.SlashEpoch <= deal.EndEpoch)
+		builtin.RequireState(rt, epoch >= state.SlashEpoch, "current epoch less than deal slash epoch %d", state.SlashEpoch)
+		builtin.RequireState(rt, state.SlashEpoch <= deal.EndEpoch, "deal slash epoch %d after deal end %d", state.SlashEpoch, deal.EndEpoch)
 		paymentEndEpoch = state.SlashEpoch
 	} else if epoch < paymentEndEpoch {
 		paymentEndEpoch = epoch
@@ -117,35 +141,35 @@ func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealStat
 
 		// the transfer amount can be less than or equal to zero if a deal is slashed before or at the deal's start epoch.
 		if totalPayment.GreaterThan(big.Zero()) {
-			m.transferBalance(rt, deal.Client, deal.Provider, totalPayment)
+			err := m.transferBalance(deal.Client, deal.Provider, totalPayment)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to transfer %v from %v to %v",
+				totalPayment, deal.Client, deal.Provider)
 		}
 	}
 
 	if everSlashed {
 		// unlock client collateral and locked storage fee
-		paymentRemaining := dealGetPaymentRemaining(deal, state.SlashEpoch)
+		paymentRemaining, err := dealGetPaymentRemaining(deal, state.SlashEpoch)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute remaining payment")
 
 		// unlock remaining storage fee
-		if err := m.unlockBalance(deal.Client, paymentRemaining, ClientStorageFee); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock remaining client storage fee: %s", err)
-		}
+		err = m.unlockBalance(deal.Client, paymentRemaining, ClientStorageFee)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock remaining client storage fee")
+
 		// unlock client collateral
-		if err := m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "failed to unlock client collateral: %s", err)
-		}
+		err = m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock client collateral")
 
 		// slash provider collateral
 		amountSlashed = deal.ProviderCollateral
-		if err := m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral); err != nil {
-			rt.Abortf(exitcode.ErrIllegalState, "slashing balance: %s", err)
-		}
-
-		return amountSlashed, epochUndefined, true
+		err = m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "slashing balance")
+		return amountSlashed, EpochUndefined, true
 	}
 
 	if epoch >= deal.EndEpoch {
 		m.processDealExpired(rt, deal, state)
-		return amountSlashed, epochUndefined, true
+		return amountSlashed, EpochUndefined, true
 	}
 
 	// We're explicitly not inspecting the end epoch and may process a deal's expiration late, in order to prevent an outsider
@@ -166,7 +190,7 @@ func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProp
 		rt.Abortf(exitcode.ErrIllegalState, "failure unlocking client collateral: %s", err)
 	}
 
-	amountSlashed := collateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
+	amountSlashed := CollateralPenaltyForDealActivationMissed(deal.ProviderCollateral)
 	amountRemaining := big.Sub(deal.ProviderBalanceRequirement(), amountSlashed)
 
 	if err := m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral); err != nil {
@@ -182,16 +206,14 @@ func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProp
 
 // Normal expiration. Unlock collaterals for both provider and client.
 func (m *marketStateMutation) processDealExpired(rt Runtime, deal *DealProposal, state *DealState) {
-	Assert(state.SectorStartEpoch != epochUndefined)
+	builtin.RequireState(rt, state.SectorStartEpoch != EpochUndefined, "sector start epoch undefined")
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
-	if err := m.unlockBalance(deal.Provider, deal.ProviderCollateral, ProviderCollateral); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal provider balance: %s", err)
-	}
+	err := m.unlockBalance(deal.Provider, deal.ProviderCollateral, ProviderCollateral)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed unlocking deal provider balance")
 
-	if err := m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral); err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed unlocking deal client balance: %s", err)
-	}
+	err = m.unlockBalance(deal.Client, deal.ClientCollateral, ClientCollateral)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed unlocking deal client balance")
 }
 
 func (m *marketStateMutation) generateStorageDealID() abi.DealID {
@@ -219,8 +241,10 @@ func dealProposalIsInternallyValid(rt Runtime, proposal ClientDealProposal) erro
 	return nil
 }
 
-func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.TokenAmount {
-	Assert(slashEpoch <= deal.EndEpoch)
+func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) (abi.TokenAmount, error) {
+	if slashEpoch > deal.EndEpoch {
+		return big.Zero(), xerrors.Errorf("deal slash epoch %d after end epoch %d", slashEpoch, deal.EndEpoch)
+	}
 
 	// Payments are always for start -> end epoch irrespective of when the deal is slashed.
 	if slashEpoch < deal.StartEpoch {
@@ -228,9 +252,11 @@ func dealGetPaymentRemaining(deal *DealProposal, slashEpoch abi.ChainEpoch) abi.
 	}
 
 	durationRemaining := deal.EndEpoch - slashEpoch
-	Assert(durationRemaining >= 0)
+	if durationRemaining < 0 {
+		return big.Zero(), xerrors.Errorf("deal remaining duration negative: %d", durationRemaining)
+	}
 
-	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch)
+	return big.Mul(big.NewInt(int64(durationRemaining)), deal.StoragePricePerEpoch), nil
 }
 
 // MarketStateMutationPermission is the mutation permission on a state field
@@ -259,7 +285,7 @@ type marketStateMutation struct {
 	escrowTable  *adt.BalanceTable
 
 	pendingPermit MarketStateMutationPermission
-	pendingDeals  *adt.Map
+	pendingDeals  *adt.Set
 
 	dpePermit    MarketStateMutationPermission
 	dealsByEpoch *SetMultimap
@@ -314,7 +340,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	}
 
 	if m.pendingPermit != Invalid {
-		pending, err := adt.AsMap(m.store, m.st.PendingProposals)
+		pending, err := adt.AsSet(m.store, m.st.PendingProposals, builtin.DefaultHamtBitwidth)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load pending proposals: %w", err)
 		}
@@ -322,7 +348,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	}
 
 	if m.dpePermit != Invalid {
-		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
+		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch, builtin.DefaultHamtBitwidth, builtin.DefaultHamtBitwidth)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load deals by epoch: %w", err)
 		}

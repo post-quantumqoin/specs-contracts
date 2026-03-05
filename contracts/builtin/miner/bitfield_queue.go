@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/ipfs/go-cid"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
+	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
@@ -16,11 +17,11 @@ import (
 // Keys in the queue are quantized (upwards), modulo some offset, to reduce the cardinality of keys.
 type BitfieldQueue struct {
 	*adt.Array
-	quant QuantSpec
+	quant builtin.QuantSpec
 }
 
-func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec) (BitfieldQueue, error) {
-	arr, err := adt.AsArray(store, root)
+func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant builtin.QuantSpec, bitwidth int) (BitfieldQueue, error) {
+	arr, err := adt.AsArray(store, root, bitwidth)
 	if err != nil {
 		return BitfieldQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}
@@ -80,21 +81,24 @@ func (q BitfieldQueue) Cut(toCut bitfield.BitField) error {
 	}); err != nil {
 		return xerrors.Errorf("failed to cut from bitfield queue: %w", err)
 	}
-	if err := q.BatchDelete(epochsToRemove); err != nil {
+	if err := q.BatchDelete(epochsToRemove, true); err != nil {
 		return xerrors.Errorf("failed to remove empty epochs from bitfield queue: %w", err)
 	}
 	return nil
 }
 
 func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) error {
-	// Update each epoch in-order to be deterministic.
 	// Pre-quantize to reduce the number of updates.
 	quantizedValues := make(map[abi.ChainEpoch][]uint64, len(values))
-	updatedEpochs := make([]abi.ChainEpoch, 0, len(values))
 	for rawEpoch, entries := range values { // nolint:nomaprange // subsequently sorted
 		epoch := q.quant.QuantizeUp(rawEpoch)
-		updatedEpochs = append(updatedEpochs, epoch)
 		quantizedValues[epoch] = append(quantizedValues[epoch], entries...)
+	}
+
+	// Update each epoch in-order to be deterministic.
+	updatedEpochs := make([]abi.ChainEpoch, 0, len(quantizedValues))
+	for epoch := range quantizedValues { // nolint:nomaprange // subsequently sorted
+		updatedEpochs = append(updatedEpochs, epoch)
 	}
 
 	sort.Slice(updatedEpochs, func(i, j int) bool {
@@ -132,7 +136,7 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values bitfield.BitField,
 		return bitfield.New(), false, nil
 	}
 
-	if err = q.BatchDelete(poppedKeys); err != nil {
+	if err = q.BatchDelete(poppedKeys, true); err != nil {
 		return bitfield.BitField{}, false, err
 	}
 	merged, err := bitfield.MultiMerge(poppedValues...)

@@ -1,12 +1,14 @@
 package states
 
 import (
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/abi"
+	// states0 "github.com/post-quantumqoin/specs-contracts/contracts/states"
 	"github.com/post-quantumqoin/core-types/big"
+	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
@@ -18,6 +20,7 @@ type Actor struct {
 	CallSeqNum uint64  // CallSeqNum for the next message to be received by the actor (non-zero for accounts only)
 	Balance    big.Int // Token balance of the actor
 }
+// type Actor = states0.Actor
 
 // A specialization of a map of ID-addresses to actor heads.
 type Tree struct {
@@ -27,7 +30,10 @@ type Tree struct {
 
 // Initializes a new, empty state tree backed by a store.
 func NewTree(store adt.Store) (*Tree, error) {
-	emptyMap := adt.MakeEmptyMap(store)
+	emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		return nil, err
+	}
 	return &Tree{
 		Map:   emptyMap,
 		Store: store,
@@ -36,7 +42,7 @@ func NewTree(store adt.Store) (*Tree, error) {
 
 // Loads a tree from a root CID and store.
 func LoadTree(s adt.Store, r cid.Cid) (*Tree, error) {
-	m, err := adt.AsMap(s, r)
+	m, err := adt.AsMap(s, r, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}

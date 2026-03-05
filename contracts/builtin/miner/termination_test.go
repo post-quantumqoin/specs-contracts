@@ -3,7 +3,7 @@ package miner_test
 import (
 	"testing"
 
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/stretchr/testify/require"
 

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ipfs/go-cid"
 	address "github.com/post-quantumqoin/address"
 	"github.com/post-quantumqoin/core-types/big"
+	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
@@ -175,7 +175,7 @@ func TestStateTreeConsistency(t *testing.T) {
 	require.NoError(t, err)
 
 	fmt.Println("root is: ", root)
-	if root.String() != "bafy2bzaceb2bhqw75pqp44efoxvlnm73lnctq6djair56bfn5x3gw56epcxbi" {
+	if root.String() != "bafy2bzacea3yrl2k3dyaifdkpign5muvfjavxntzt2mwl6golpwlz5sa4mpy2" {
 		t.Fatal("MISMATCH!")
 	}
 }

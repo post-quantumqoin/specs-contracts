@@ -1,7 +1,7 @@
 package builtin
 
 import (
-	abi "github.com/post-quantumqoin/core-types/abi"
+	"github.com/post-quantumqoin/core-types/abi"
 )
 
 const (
@@ -67,9 +67,9 @@ var MethodsPower = struct {
 	CreateMiner              abi.MethodNum
 	UpdateClaimedPower       abi.MethodNum
 	EnrollCronEvent          abi.MethodNum
-	OnEpochTickEnd           abi.MethodNum
+	CronTick                 abi.MethodNum
 	UpdatePledgeTotal        abi.MethodNum
-	OnConsensusFault         abi.MethodNum
+	Deprecated1              abi.MethodNum
 	SubmitPoRepForBulkVerify abi.MethodNum
 	CurrentTotalPower        abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
@@ -88,20 +88,28 @@ var MethodsMiner = struct {
 	DeclareFaultsRecovered   abi.MethodNum
 	OnDeferredCronEvent      abi.MethodNum
 	CheckSectorProven        abi.MethodNum
-	AddLockedFund            abi.MethodNum
+	ApplyRewards             abi.MethodNum
 	ReportConsensusFault     abi.MethodNum
 	WithdrawBalance          abi.MethodNum
 	ConfirmSectorProofsValid abi.MethodNum
 	ChangeMultiaddrs         abi.MethodNum
 	CompactPartitions        abi.MethodNum
 	CompactSectorNumbers     abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	ConfirmUpdateWorkerKey   abi.MethodNum
+	RepayDebt                abi.MethodNum
+	ChangeOwnerAddress       abi.MethodNum
+	DisputeWindowedPoSt      abi.MethodNum
+	PreCommitSectorBatch     abi.MethodNum
+	ProveCommitAggregate     abi.MethodNum
+	ProveReplicaUpdates      abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27}
 
 var MethodsVerifiedRegistry = struct {
-	Constructor       abi.MethodNum
-	AddVerifier       abi.MethodNum
-	RemoveVerifier    abi.MethodNum
-	AddVerifiedClient abi.MethodNum
-	UseBytes          abi.MethodNum
-	RestoreBytes      abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6}
+	Constructor                 abi.MethodNum
+	AddVerifier                 abi.MethodNum
+	RemoveVerifier              abi.MethodNum
+	AddVerifiedClient           abi.MethodNum
+	UseBytes                    abi.MethodNum
+	RestoreBytes                abi.MethodNum
+	RemoveVerifiedClientDataCap abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7}
