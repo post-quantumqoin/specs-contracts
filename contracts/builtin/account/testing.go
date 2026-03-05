@@ -1,9 +1,9 @@
 package account
 
 import (
-	"github.com/filecoin-project/go-address"
+	"github.com/post-quantumqoin/address"
 
-	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 )
 
 type StateSummary struct {

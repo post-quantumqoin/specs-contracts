@@ -203,3 +203,163 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 
 	return nil
 }
+
+var lengthBufApplyRewardParams = []byte{130}
+
+func (t *ApplyRewardParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufApplyRewardParams); err != nil {
+		return err
+	}
+
+	// t.Reward (big.Int) (struct)
+	if err := t.Reward.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Penalty (big.Int) (struct)
+	if err := t.Penalty.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *ApplyRewardParams) UnmarshalCBOR(r io.Reader) error {
+	*t = ApplyRewardParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Reward (big.Int) (struct)
+
+	{
+
+		if err := t.Reward.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Reward: %w", err)
+		}
+
+	}
+	// t.Penalty (big.Int) (struct)
+
+	{
+
+		if err := t.Penalty.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Penalty: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufDeferredCronEventParams = []byte{131}
+
+func (t *DeferredCronEventParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufDeferredCronEventParams); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.EventPayload ([]uint8) (slice)
+	if len(t.EventPayload) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.EventPayload was too long")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.EventPayload))); err != nil {
+		return err
+	}
+
+	if _, err := w.Write(t.EventPayload[:]); err != nil {
+		return err
+	}
+
+	// t.RewardSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.RewardSmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.QualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *DeferredCronEventParams) UnmarshalCBOR(r io.Reader) error {
+	*t = DeferredCronEventParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.EventPayload ([]uint8) (slice)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+
+	if extra > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("t.EventPayload: byte array too large (%d)", extra)
+	}
+	if maj != cbg.MajByteString {
+		return fmt.Errorf("expected byte array")
+	}
+
+	if extra > 0 {
+		t.EventPayload = make([]uint8, extra)
+	}
+
+	if _, err := io.ReadFull(br, t.EventPayload[:]); err != nil {
+		return err
+	}
+	// t.RewardSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		if err := t.RewardSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RewardSmoothed: %w", err)
+		}
+
+	}
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+
+	{
+
+		if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed: %w", err)
+		}
+
+	}
+	return nil
+}

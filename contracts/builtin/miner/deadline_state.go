@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/ipfs/go-cid"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
-	"github.com/post-quantumqoin/core-types/exitcode"
 	xc "github.com/post-quantumqoin/core-types/exitcode"
+	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
+	"github.com/post-quantumqoin/specs-contracts/contracts/runtime/proof"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
@@ -41,8 +42,13 @@ type Deadline struct {
 	// recovered, and this queue will not be updated at that time.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
-	// Partitions numbers with PoSt submissions since the proving period started.
-	PostSubmissions bitfield.BitField
+	// Partitions that have been proved by window PoSts so far during the
+	// current challenge window.
+	// NOTE: This bitfield includes both partitions whose proofs
+	// were optimistically accepted and stored in
+	// OptimisticPoStSubmissions, and those whose proofs were
+	// verified on-chain.
+	PartitionsPoSted bitfield.BitField
 
 	// Partitions with sectors that terminated early.
 	EarlyTerminations bitfield.BitField
@@ -55,7 +61,46 @@ type Deadline struct {
 
 	// Memoized sum of faulty power in partitions.
 	FaultyPower PowerPair
+
+	// AMT of optimistically accepted WindowPoSt proofs, submitted during
+	// the current challenge window. At the end of the challenge window,
+	// this AMT will be moved to OptimisticPoStSubmissionsSnapshot. WindowPoSt proofs
+	// verified on-chain do not appear in this AMT.
+	OptimisticPoStSubmissions cid.Cid // AMT[]WindowedPoSt
+
+	// Snapshot of the miner's sectors AMT at the end of the previous challenge
+	// window for this deadline.
+	SectorsSnapshot cid.Cid
+
+	// Snapshot of partition state at the end of the previous challenge
+	// window for this deadline.
+	PartitionsSnapshot cid.Cid
+
+	// Snapshot of the proofs submitted by the end of the previous challenge
+	// window for this deadline.
+	//
+	// These proofs may be disputed via DisputeWindowedPoSt. Successfully
+	// disputed window PoSts are removed from the snapshot.
+	OptimisticPoStSubmissionsSnapshot cid.Cid
 }
+
+type WindowedPoSt struct {
+	// Partitions proved by this WindowedPoSt.
+	Partitions bitfield.BitField
+	// Array of proofs, one per distinct registered proof type present in
+	// the sectors being proven. In the usual case of a single proof type,
+	// this array will always have a single element (independent of number
+	// of partitions).
+	Proofs []proof.PoStProof
+}
+
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
+const DeadlinePartitionsAmtBitwidth = 3 // Usually a small array
+const DeadlineExpirationAmtBitwidth = 5
+
+// Given that 4 partitions can be proven in one post, this AMT's height will
+// only exceed the partition AMT's height at ~0.75EiB of storage.
+const DeadlineOptimisticPoStSubmissionsAmtBitwidth = 2
 
 //
 // Deadlines (plural)
@@ -99,11 +144,17 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 	if dlIdx >= uint64(len(d.Due)) {
 		return xerrors.Errorf("invalid deadline %d", dlIdx)
 	}
+
+	if err := deadline.ValidateState(); err != nil {
+		return err
+	}
+
 	dlCid, err := store.Put(store.Context(), deadline)
 	if err != nil {
 		return err
 	}
 	d.Due[dlIdx] = dlCid
+
 	return nil
 }
 
@@ -111,22 +162,77 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 // Deadline (singular)
 //
 
-func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
-	return &Deadline{
-		Partitions:        emptyArrayCid,
-		ExpirationsEpochs: emptyArrayCid,
-		PostSubmissions:   bitfield.New(),
-		EarlyTerminations: bitfield.New(),
-		LiveSectors:       0,
-		TotalSectors:      0,
-		FaultyPower:       NewPowerPairZero(),
+func ConstructDeadline(store adt.Store) (*Deadline, error) {
+	emptyPartitionsArrayCid, err := adt.StoreEmptyArray(store, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty partitions array: %w", err)
 	}
+	emptyDeadlineExpirationArrayCid, err := adt.StoreEmptyArray(store, DeadlineExpirationAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
+	}
+
+	emptySectorsSnapshotArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty sectors snapshot array: %w", err)
+	}
+
+	emptyPoStSubmissionsArrayCid, err := adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
+	}
+
+	return &Deadline{
+		Partitions:                        emptyPartitionsArrayCid,
+		ExpirationsEpochs:                 emptyDeadlineExpirationArrayCid,
+		EarlyTerminations:                 bitfield.New(),
+		LiveSectors:                       0,
+		TotalSectors:                      0,
+		FaultyPower:                       NewPowerPairZero(),
+		PartitionsPoSted:                  bitfield.New(),
+		OptimisticPoStSubmissions:         emptyPoStSubmissionsArrayCid,
+		PartitionsSnapshot:                emptyPartitionsArrayCid,
+		SectorsSnapshot:                   emptySectorsSnapshotArrayCid,
+		OptimisticPoStSubmissionsSnapshot: emptyPoStSubmissionsArrayCid,
+	}, nil
 }
 
 func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
-	arr, err := adt.AsArray(store, d.Partitions)
+	arr, err := adt.AsArray(store, d.Partitions, DeadlinePartitionsAmtBitwidth)
 	if err != nil {
 		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+	}
+	return arr, nil
+}
+
+func (d *Deadline) OptimisticProofsArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.OptimisticPoStSubmissions, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load proofs: %w", err)
+	}
+	return arr, nil
+}
+
+func (d *Deadline) SectorsSnapshotArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.SectorsSnapshot, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load sectors snapshot: %w", err)
+	}
+	return arr, nil
+}
+
+func (d *Deadline) PartitionsSnapshotArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.PartitionsSnapshot, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load partitions snapshot: %w", err)
+	}
+	return arr, nil
+}
+
+func (d *Deadline) OptimisticProofsSnapshotArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.OptimisticPoStSubmissionsSnapshot, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load proofs snapshot: %w", err)
 	}
 	return arr, nil
 }
@@ -147,14 +253,30 @@ func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, e
 	return &partition, nil
 }
 
+func (d *Deadline) LoadPartitionSnapshot(store adt.Store, partIdx uint64) (*Partition, error) {
+	partitions, err := d.PartitionsSnapshotArray(store)
+	if err != nil {
+		return nil, err
+	}
+	var partition Partition
+	found, err := partitions.Get(partIdx, &partition)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to lookup partition %d: %w", partIdx, err)
+	}
+	if !found {
+		return nil, xc.ErrNotFound.Wrapf("no partition %d", partIdx)
+	}
+	return &partition, nil
+}
+
 // Adds some partition numbers to the set expiring at an epoch.
-func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions []uint64, quant QuantSpec) error {
+func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions []uint64, quant builtin.QuantSpec) error {
 	// Avoid doing any work if there's nothing to reschedule.
 	if len(partitions) == 0 {
 		return nil
 	}
 
-	queue, err := LoadBitfieldQueue(store, d.ExpirationsEpochs, quant)
+	queue, err := LoadBitfieldQueue(store, d.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load expiration queue: %w", err)
 	}
@@ -169,7 +291,7 @@ func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.
 
 // PopExpiredSectors terminates expired sectors from all partitions.
 // Returns the expired sector aggregates.
-func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*ExpirationSet, error) {
+func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant builtin.QuantSpec) (*ExpirationSet, error) {
 	expiredPartitions, modified, err := dl.popExpiredPartitions(store, until, quant)
 	if err != nil {
 		return nil, err
@@ -258,15 +380,18 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 // that this deadline isn't currently "open" (i.e., being proved at this point
 // in time).
 // The sectors are assumed to be non-faulty.
-func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []*SectorOnChainInfo,
-	ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
+// Returns the power of the added sectors (which is active yet if proven=false).
+func (dl *Deadline) AddSectors(
+	store adt.Store, partitionSize uint64, proven bool, sectors []*SectorOnChainInfo,
+	ssize abi.SectorSize, quant builtin.QuantSpec,
+) (PowerPair, error) {
+	totalPower := NewPowerPairZero()
 	if len(sectors) == 0 {
-		return NewPowerPairZero(), nil
+		return totalPower, nil
 	}
 
 	// First update partitions, consuming the sectors
 	partitionDeadlineUpdates := make(map[abi.ChainEpoch][]uint64)
-	newPower := NewPowerPairZero()
 	dl.LiveSectors += uint64(len(sectors))
 	dl.TotalSectors += uint64(len(sectors))
 
@@ -288,13 +413,11 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 				return NewPowerPairZero(), err
 			} else if !found {
 				// This case will usually happen zero times.
-				// It would require adding more than a full partition in one go
-				// to happen more than once.
-				emptyArray, err := adt.MakeEmptyArray(store).Root()
+				// It would require adding more than a full partition in one go to happen more than once.
+				partition, err = ConstructPartition(store)
 				if err != nil {
 					return NewPowerPairZero(), err
 				}
-				partition = ConstructPartition(emptyArray)
 			}
 
 			// Figure out which (if any) sectors we want to add to this partition.
@@ -311,11 +434,11 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 			sectors = sectors[size:]
 
 			// Add sectors to partition.
-			partitionNewPower, err := partition.AddSectors(store, partitionNewSectors, ssize, quant)
+			partitionPower, err := partition.AddSectors(store, proven, partitionNewSectors, ssize, quant)
 			if err != nil {
 				return NewPowerPairZero(), err
 			}
-			newPower = newPower.Add(partitionNewPower)
+			totalPower = totalPower.Add(partitionPower)
 
 			// Save partition back.
 			err = partitions.Set(partIdx, partition)
@@ -343,7 +466,7 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 
 	// Next, update the expiration queue.
 	{
-		deadlineExpirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+		deadlineExpirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 		if err != nil {
 			return NewPowerPairZero(), xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
@@ -357,7 +480,7 @@ func (dl *Deadline) AddSectors(store adt.Store, partitionSize uint64, sectors []
 		}
 	}
 
-	return newPower, nil
+	return totalPower, nil
 }
 
 func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {
@@ -439,8 +562,8 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSect
 }
 
 // Returns nil if nothing was popped.
-func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (bitfield.BitField, bool, error) {
-	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant builtin.QuantSpec) (bitfield.BitField, bool, error) {
+	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 	if err != nil {
 		return bitfield.BitField{}, false, err
 	}
@@ -466,7 +589,7 @@ func (dl *Deadline) TerminateSectors(
 	epoch abi.ChainEpoch,
 	partitionSectors PartitionSectorMap,
 	ssize abi.SectorSize,
-	quant QuantSpec,
+	quant builtin.QuantSpec,
 ) (powerLost PowerPair, err error) {
 
 	partitions, err := dl.PartitionsArray(store)
@@ -525,7 +648,7 @@ func (dl *Deadline) TerminateSectors(
 //
 // Returns an error if any of the partitions contained faulty sectors or early
 // terminations.
-func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField, quant QuantSpec) (
+func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField, quant builtin.QuantSpec) (
 	live, dead bitfield.BitField, removedPower PowerPair, err error,
 ) {
 	oldPartitions, err := dl.PartitionsArray(store)
@@ -561,7 +684,10 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("cannot remove partitions from deadline with early terminations: %w", err)
 	}
 
-	newPartitions := adt.MakeEmptyArray(store)
+	newPartitions, err := adt.MakeEmptyArray(store, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to create empty array for initializing partitions: %w", err)
+	}
 	allDeadSectors := make([]bitfield.BitField, 0, len(toRemoveSet))
 	allLiveSectors := make([]bitfield.BitField, 0, len(toRemoveSet))
 	removedPower = NewPowerPairZero()
@@ -593,6 +719,15 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 		}
 		if !hasNoFaults {
 			return xc.ErrIllegalArgument.Wrapf("cannot remove partition %d: has faults", partIdx)
+		}
+
+		// Don't allow removing partitions with unproven sectors.
+		allProven, err := partition.Unproven.IsEmpty()
+		if err != nil {
+			return xc.ErrIllegalState.Wrapf("failed to decode unproven for partition %d: %w", partIdx, err)
+		}
+		if !allProven {
+			return xc.ErrIllegalArgument.Wrapf("cannot remove partition %d: has unproven sectors", partIdx)
 		}
 
 		// Get the live sectors.
@@ -639,7 +774,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 
 	// Update expiration bitfields.
 	{
-		expirationEpochs, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+		expirationEpochs, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 		if err != nil {
 			return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to load expiration queue: %w", err)
 		}
@@ -658,10 +793,10 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 	return live, dead, removedPower, nil
 }
 
-func (dl *Deadline) DeclareFaults(
-	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
+func (dl *Deadline) RecordFaults(
+	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant builtin.QuantSpec,
 	faultExpirationEpoch abi.ChainEpoch, partitionSectors PartitionSectorMap,
-) (newFaultyPower PowerPair, err error) {
+) (powerDelta PowerPair, err error) {
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
 		return NewPowerPairZero(), err
@@ -670,7 +805,7 @@ func (dl *Deadline) DeclareFaults(
 	// Record partitions with some fault, for subsequently indexing in the deadline.
 	// Duplicate entries don't matter, they'll be stored in a bitfield (a set).
 	partitionsWithFault := make([]uint64, 0, len(partitionSectors))
-	newFaultyPower = NewPowerPairZero()
+	powerDelta = NewPowerPairZero()
 	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos bitfield.BitField) error {
 		var partition Partition
 		if found, err := partitions.Get(partIdx, &partition); err != nil {
@@ -679,11 +814,14 @@ func (dl *Deadline) DeclareFaults(
 			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
 		}
 
-		newFaults, newPartitionFaultyPower, err := partition.DeclareFaults(store, sectors, sectorNos, faultExpirationEpoch, ssize, quant)
+		newFaults, partitionPowerDelta, partitionNewFaultyPower, err := partition.RecordFaults(
+			store, sectors, sectorNos, faultExpirationEpoch, ssize, quant,
+		)
 		if err != nil {
 			return xerrors.Errorf("failed to declare faults in partition %d: %w", partIdx, err)
 		}
-		newFaultyPower = newFaultyPower.Add(newPartitionFaultyPower)
+		dl.FaultyPower = dl.FaultyPower.Add(partitionNewFaultyPower)
+		powerDelta = powerDelta.Add(partitionPowerDelta)
 		if empty, err := newFaults.IsEmpty(); err != nil {
 			return xerrors.Errorf("failed to count new faults: %w", err)
 		} else if !empty {
@@ -710,9 +848,7 @@ func (dl *Deadline) DeclareFaults(
 		return NewPowerPairZero(), xc.ErrIllegalState.Wrapf("failed to update expirations for partitions with faults: %w", err)
 	}
 
-	dl.FaultyPower = dl.FaultyPower.Add(newFaultyPower)
-
-	return newFaultyPower, nil
+	return powerDelta, nil
 }
 
 func (dl *Deadline) DeclareFaultsRecovered(
@@ -755,25 +891,25 @@ func (dl *Deadline) DeclareFaultsRecovered(
 }
 
 // ProcessDeadlineEnd processes all PoSt submissions, marking unproven sectors as
-// faulty and clearing failed recoveries. It returns any new faulty power and
-// failed recovery power.
-func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
-	newFaultyPower, failedRecoveryPower PowerPair, err error,
+// faulty and clearing failed recoveries. It returns the power delta, and any
+// power that should be penalized (new faults and failed recoveries).
+func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec, faultExpirationEpoch abi.ChainEpoch, sectors cid.Cid) (
+	powerDelta, penalizedPower PowerPair, err error,
 ) {
-	newFaultyPower = NewPowerPairZero()
-	failedRecoveryPower = NewPowerPairZero()
+	powerDelta = NewPowerPairZero()
+	penalizedPower = NewPowerPairZero()
 
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
-		return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+		return powerDelta, penalizedPower, xerrors.Errorf("failed to load partitions: %w", err)
 	}
 
 	detectedAny := false
 	var rescheduledPartitions []uint64
 	for partIdx := uint64(0); partIdx < partitions.Length(); partIdx++ {
-		proven, err := dl.PostSubmissions.IsSet(partIdx)
+		proven, err := dl.PartitionsPoSted.IsSet(partIdx)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to check submission for partition %d: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to check submission for partition %d: %w", partIdx, err)
 		}
 		if proven {
 			continue
@@ -782,10 +918,10 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 		var partition Partition
 		found, err := partitions.Get(partIdx, &partition)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to load partition %d: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
 		}
 		if !found {
-			return newFaultyPower, failedRecoveryPower, exitcode.ErrIllegalState.Wrapf("no partition %d", partIdx)
+			return powerDelta, penalizedPower, xerrors.Errorf("no partition %d", partIdx)
 		}
 
 		// If we have no recovering power/sectors, and all power is faulty, skip
@@ -797,65 +933,77 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 		// Ok, we actually need to process this partition. Make sure we save the partition state back.
 		detectedAny = true
 
-		partFaultyPower, partFailedRecoveryPower, err := partition.RecordMissedPost(store, faultExpirationEpoch, quant)
+		partPowerDelta, partPenalizedPower, partNewFaultyPower, err := partition.RecordMissedPost(store, faultExpirationEpoch, quant)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to record missed PoSt for partition %v: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to record missed PoSt for partition %v: %w", partIdx, err)
 		}
 
 		// We marked some sectors faulty, we need to record the new
 		// expiration. We don't want to do this if we're just penalizing
 		// the miner for failing to recover power.
-		if !partFaultyPower.IsZero() {
+		if !partNewFaultyPower.IsZero() {
 			rescheduledPartitions = append(rescheduledPartitions, partIdx)
 		}
 
 		// Save new partition state.
 		err = partitions.Set(partIdx, &partition)
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to update partition %v: %w", partIdx, err)
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to update partition %v: %w", partIdx, err)
 		}
 
-		newFaultyPower = newFaultyPower.Add(partFaultyPower)
-		failedRecoveryPower = failedRecoveryPower.Add(partFailedRecoveryPower)
+		dl.FaultyPower = dl.FaultyPower.Add(partNewFaultyPower)
+
+		powerDelta = powerDelta.Add(partPowerDelta)
+		penalizedPower = penalizedPower.Add(partPenalizedPower)
 	}
 
 	// Save modified deadline state.
 	if detectedAny {
 		dl.Partitions, err = partitions.Root()
 		if err != nil {
-			return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to store partitions: %w", err)
+			return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to store partitions: %w", err)
 		}
 	}
 
 	err = dl.AddExpirationPartitions(store, faultExpirationEpoch, rescheduledPartitions, quant)
 	if err != nil {
-		return newFaultyPower, failedRecoveryPower, xc.ErrIllegalState.Wrapf("failed to update deadline expiration queue: %w", err)
+		return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to update deadline expiration queue: %w", err)
 	}
 
-	dl.FaultyPower = dl.FaultyPower.Add(newFaultyPower)
+	// Reset PoSt submissions, snapshot proofs.
+	dl.PartitionsPoSted = bitfield.New()
+	dl.PartitionsSnapshot = dl.Partitions
+	dl.OptimisticPoStSubmissionsSnapshot = dl.OptimisticPoStSubmissions
+	dl.OptimisticPoStSubmissions, err = adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
+	}
+	// only snapshot sectors if there's a proof that might be disputed (this is equivalent to asking if the OptimisticPoStSubmissionsSnapshot is empty)
+	if dl.OptimisticPoStSubmissions != dl.OptimisticPoStSubmissionsSnapshot {
+		dl.SectorsSnapshot = sectors
+	} else {
+		emptySectorsSnapshotArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+		if err != nil {
+			return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to zero out the sectors snapshot: %w", err)
+		}
 
-	// Reset PoSt submissions.
-	dl.PostSubmissions = bitfield.New()
-	return newFaultyPower, failedRecoveryPower, nil
+		dl.SectorsSnapshot = emptySectorsSnapshotArrayCid
+	}
+
+	return powerDelta, penalizedPower, nil
 }
 
 type PoStResult struct {
+	// Power activated or deactivated (positive or negative).
+	PowerDelta PowerPair
+	// Powers used for calculating penalties.
 	NewFaultyPower, RetractedRecoveryPower, RecoveredPower PowerPair
 	// Sectors is a bitfield of all sectors in the proven partitions.
 	Sectors bitfield.BitField
 	// IgnoredSectors is a subset of Sectors that should be ignored.
 	IgnoredSectors bitfield.BitField
-}
-
-// PowerDelta returns the power change (positive or negative) after processing
-// the PoSt submission.
-func (p *PoStResult) PowerDelta() PowerPair {
-	return p.RecoveredPower.Sub(p.NewFaultyPower)
-}
-
-// PenaltyPower is the power from this PoSt that should be penalized.
-func (p *PoStResult) PenaltyPower() PowerPair {
-	return p.NewFaultyPower.Add(p.RetractedRecoveryPower)
+	// Bitfield of partitions that were proven.
+	Partitions bitfield.BitField
 }
 
 // RecordProvenSectors processes a series of posts, recording proven partitions
@@ -865,14 +1013,33 @@ func (p *PoStResult) PenaltyPower() PowerPair {
 // changes to power (newly faulty power, power that should have been proven
 // recovered but wasn't, and newly recovered power).
 //
-// NOTE: This function does not actually _verify_ any proofs. The returned
-// Sectors and IgnoredSectors must subsequently be validated against the PoSt
-// submitted by the miner.
+// NOTE: This function does not actually _verify_ any proofs.
 func (dl *Deadline) RecordProvenSectors(
 	store adt.Store, sectors Sectors,
-	ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch,
+	ssize abi.SectorSize, quant builtin.QuantSpec, faultExpiration abi.ChainEpoch,
 	postPartitions []PoStPartition,
 ) (*PoStResult, error) {
+
+	partitionIndexes := bitfield.New()
+	for _, partition := range postPartitions {
+		partitionIndexes.Set(partition.Index)
+	}
+	if numPartitions, err := partitionIndexes.Count(); err != nil {
+		return nil, xerrors.Errorf("failed to count posted partitions: %w", err)
+	} else if numPartitions != uint64(len(postPartitions)) {
+		return nil, xc.ErrIllegalArgument.Wrapf("duplicate partitions proven")
+	}
+
+	// First check to see if we're proving any already proven partitions.
+	// This is faster than checking one by one.
+	if alreadyProven, err := bitfield.IntersectBitField(dl.PartitionsPoSted, partitionIndexes); err != nil {
+		return nil, xerrors.Errorf("failed to check proven partitions: %w", err)
+	} else if empty, err := alreadyProven.IsEmpty(); err != nil {
+		return nil, xerrors.Errorf("failed to check proven intersection is empty: %w", err)
+	} else if !empty {
+		return nil, xc.ErrIllegalArgument.Wrapf("partition already proven: %v", alreadyProven)
+	}
+
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
 		return nil, err
@@ -883,19 +1050,11 @@ func (dl *Deadline) RecordProvenSectors(
 	newFaultyPowerTotal := NewPowerPairZero()
 	retractedRecoveryPowerTotal := NewPowerPairZero()
 	recoveredPowerTotal := NewPowerPairZero()
+	powerDelta := NewPowerPairZero()
 	var rescheduledPartitions []uint64
 
 	// Accumulate sectors info for proof verification.
 	for _, post := range postPartitions {
-		alreadyProven, err := dl.PostSubmissions.IsSet(post.Index)
-		if err != nil {
-			return nil, xc.ErrIllegalState.Wrapf("failed to check if partition %d already posted: %w", post.Index, err)
-		}
-		if alreadyProven {
-			// Skip partitions already proven for this deadline.
-			continue
-		}
-
 		var partition Partition
 		found, err := partitions.Get(post.Index, &partition)
 		if err != nil {
@@ -906,7 +1065,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 		// Process new faults and accumulate new faulty power.
 		// This updates the faults in partition state ahead of calculating the sectors to include for proof.
-		newFaultPower, retractedRecoveryPower, err := partition.RecordSkippedFaults(
+		newPowerDelta, newFaultPower, retractedRecoveryPower, hasNewFaults, err := partition.RecordSkippedFaults(
 			store, sectors, ssize, quant, faultExpiration, post.Skipped,
 		)
 		if err != nil {
@@ -915,7 +1074,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 		// If we have new faulty power, we've added some faults. We need
 		// to record the new expiration in the deadline.
-		if !newFaultPower.IsZero() {
+		if hasNewFaults {
 			rescheduledPartitions = append(rescheduledPartitions, post.Index)
 		}
 
@@ -923,6 +1082,9 @@ func (dl *Deadline) RecordProvenSectors(
 		if err != nil {
 			return nil, xerrors.Errorf("failed to recover faulty sectors for partition %d: %w", post.Index, err)
 		}
+
+		// Finally, activate power for newly proven sectors.
+		newPowerDelta = newPowerDelta.Add(partition.ActivateUnproven())
 
 		// This will be rolled back if the method aborts with a failed proof.
 		err = partitions.Set(post.Index, &partition)
@@ -933,9 +1095,10 @@ func (dl *Deadline) RecordProvenSectors(
 		newFaultyPowerTotal = newFaultyPowerTotal.Add(newFaultPower)
 		retractedRecoveryPowerTotal = retractedRecoveryPowerTotal.Add(retractedRecoveryPower)
 		recoveredPowerTotal = recoveredPowerTotal.Add(recoveredPower)
+		powerDelta = powerDelta.Add(newPowerDelta).Add(recoveredPower)
 
 		// Record the post.
-		dl.PostSubmissions.Set(post.Index)
+		dl.PartitionsPoSted.Set(post.Index)
 
 		// At this point, the partition faults represents the expected faults for the proof, with new skipped
 		// faults and recoveries taken into account.
@@ -970,71 +1133,176 @@ func (dl *Deadline) RecordProvenSectors(
 	return &PoStResult{
 		Sectors:                allSectorNos,
 		IgnoredSectors:         allIgnoredSectorNos,
+		PowerDelta:             powerDelta,
 		NewFaultyPower:         newFaultyPowerTotal,
 		RecoveredPower:         recoveredPowerTotal,
 		RetractedRecoveryPower: retractedRecoveryPowerTotal,
+		Partitions:             partitionIndexes,
 	}, nil
 }
 
-// RescheduleSectorExpirations reschedules the expirations of the given sectors
-// to the target epoch, skipping any sectors it can't find.
-//
-// The power of the rescheduled sectors is assumed to have not changed since
-// initial scheduling.
-//
-// Note: see the docs on State.RescheduleSectorExpirations for details on why we
-// skip sectors/partitions we can't find.
-func (dl *Deadline) RescheduleSectorExpirations(
-	store adt.Store, sectors Sectors,
-	expiration abi.ChainEpoch, partitionSectors PartitionSectorMap,
-	ssize abi.SectorSize, quant QuantSpec,
-) error {
-	partitions, err := dl.PartitionsArray(store)
+// RecordPoStProofs records a set of optimistically accepted PoSt proofs
+// (usually one), associating them with the given partitions.
+func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []proof.PoStProof) error {
+	proofArr, err := dl.OptimisticProofsArray(store)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to load proofs: %w", err)
+	}
+	err = proofArr.AppendContinuous(&WindowedPoSt{
+		Partitions: partitions,
+		Proofs:     proofs,
+	})
+	if err != nil {
+		return xerrors.Errorf("failed to store proof: %w", err)
 	}
 
-	var rescheduledPartitions []uint64 // track partitions with moved expirations.
-	if err := partitionSectors.ForEach(func(partIdx uint64, sectorNos bitfield.BitField) error {
-		var partition Partition
-		if found, err := partitions.Get(partIdx, &partition); err != nil {
-			return xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
+	root, err := proofArr.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to save proofs: %w", err)
+	}
+	dl.OptimisticPoStSubmissions = root
+	return nil
+}
+
+// TakePoStProofs removes and returns a PoSt proof by index, along with the
+// associated partitions. This method takes the PoSt from the PoSt submissions
+// snapshot.
+func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitfield.BitField, proofs []proof.PoStProof, err error) {
+	proofArr, err := dl.OptimisticProofsSnapshotArray(store)
+	if err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to load proofs: %w", err)
+	}
+
+	// Extract and remove the proof from the proofs array, leaving a hole.
+	// This will not affect concurrent attempts to refute other proofs.
+	var post WindowedPoSt
+	if found, err := proofArr.Pop(idx, &post); err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to retrieve proof %d: %w", idx, err)
+	} else if !found {
+		return bitfield.New(), nil, xc.ErrIllegalArgument.Wrapf("proof %d not found", idx)
+	}
+
+	root, err := proofArr.Root()
+	if err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to save proofs: %w", err)
+	}
+	dl.OptimisticPoStSubmissionsSnapshot = root
+	return post.Partitions, post.Proofs, nil
+}
+
+// DisputeInfo includes all the information necessary to dispute a post to the
+// given partitions.
+type DisputeInfo struct {
+	AllSectorNos, IgnoredSectorNos bitfield.BitField
+	DisputedSectors                PartitionSectorMap
+	DisputedPower                  PowerPair
+}
+
+// LoadPartitionsForDispute
+func (dl *Deadline) LoadPartitionsForDispute(store adt.Store, partitions bitfield.BitField) (*DisputeInfo, error) {
+	partitionsSnapshot, err := dl.PartitionsSnapshotArray(store)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load partitions: %w", err)
+	}
+
+	var allSectors, allIgnored []bitfield.BitField
+	disputedSectors := make(PartitionSectorMap)
+	disputedPower := NewPowerPairZero()
+	err = partitions.ForEach(func(partIdx uint64) error {
+		var partitionSnapshot Partition
+		if found, err := partitionsSnapshot.Get(partIdx, &partitionSnapshot); err != nil {
+			return err
 		} else if !found {
-			// We failed to find the partition, it could have moved
-			// due to compaction. This function is only reschedules
-			// sectors it can find so we'll just skip it.
-			return nil
+			return xerrors.Errorf("failed to find partition %d", partIdx)
 		}
 
-		moved, err := partition.RescheduleExpirations(store, sectors, expiration, sectorNos, ssize, quant)
+		// Record sectors for proof verification
+		allSectors = append(allSectors, partitionSnapshot.Sectors)
+		allIgnored = append(allIgnored, partitionSnapshot.Faults)
+		allIgnored = append(allIgnored, partitionSnapshot.Terminated)
+		allIgnored = append(allIgnored, partitionSnapshot.Unproven)
+
+		// Record active sectors for marking faults.
+		active, err := partitionSnapshot.ActiveSectors()
 		if err != nil {
-			return xerrors.Errorf("failed to reschedule expirations in partition %d: %w", partIdx, err)
+			return err
 		}
-		if empty, err := moved.IsEmpty(); err != nil {
-			return xerrors.Errorf("failed to parse bitfield of rescheduled expirations: %w", err)
-		} else if empty {
-			// nothing moved.
-			return nil
+		err = disputedSectors.Add(partIdx, active)
+		if err != nil {
+			return err
 		}
 
-		rescheduledPartitions = append(rescheduledPartitions, partIdx)
-		if err = partitions.Set(partIdx, &partition); err != nil {
-			return xerrors.Errorf("failed to store partition %d: %w", partIdx, err)
-		}
+		// Record disputed power for penalties.
+		//
+		// NOTE: This also includes power that was
+		// activated at the end of the last challenge
+		// window, and power from sectors that have since
+		// expired.
+		disputedPower = disputedPower.Add(partitionSnapshot.ActivePower())
 		return nil
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return nil, xerrors.Errorf("when disputing post: %w", err)
 	}
 
-	if len(rescheduledPartitions) > 0 {
-		dl.Partitions, err = partitions.Root()
-		if err != nil {
-			return xerrors.Errorf("failed to save partitions: %w", err)
-		}
-		err := dl.AddExpirationPartitions(store, expiration, rescheduledPartitions, quant)
-		if err != nil {
-			return xerrors.Errorf("failed to reschedule partition expirations: %w", err)
-		}
+	allSectorsNos, err := bitfield.MultiMerge(allSectors...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to merge sector bitfields: %w", err)
+	}
+
+	allIgnoredNos, err := bitfield.MultiMerge(allIgnored...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to merge fault bitfields: %w", err)
+	}
+
+	return &DisputeInfo{
+		AllSectorNos:     allSectorsNos,
+		IgnoredSectorNos: allIgnoredNos,
+		DisputedSectors:  disputedSectors,
+		DisputedPower:    disputedPower,
+	}, nil
+}
+
+// IsLive returns true if the deadline has any live sectors or any other state that should be
+// updated at the end of the challenge window.
+func (d *Deadline) IsLive() (bool, error) {
+	// If we have live sectors, we're definitely live.
+	if d.LiveSectors > 0 {
+		return true, nil
+	}
+
+	if hasNoProofs, err := d.PartitionsPoSted.IsEmpty(); err != nil {
+		return true, xerrors.Errorf("invalid partitions posted bitfield: %w", err)
+	} else if !hasNoProofs {
+		// _This_ case should be impossible, but there's no good way to log from here. We
+		// might as well just process the deadline end and move on.
+		return true, nil
+	}
+
+	// If the partitions have changed, we may have work to do. We should at least update the
+	// partitions snapshot one last time.
+	if d.Partitions != d.PartitionsSnapshot {
+		return true, nil
+	}
+
+	// If we don't have any proofs, and the proofs snapshot isn't the same as the current proofs
+	// snapshot (which should be empty), we should update the deadline one last time to empty
+	// the proofs snapshot.
+	if d.OptimisticPoStSubmissions != d.OptimisticPoStSubmissionsSnapshot {
+		return true, nil
+	}
+
+	// Otherwise, the deadline is definitely dead.
+	return false, nil
+}
+
+func (d *Deadline) ValidateState() error {
+	if d.LiveSectors > d.TotalSectors {
+		return xerrors.Errorf("Deadline left with more live sectors than total: %v", d)
+	}
+
+	if d.FaultyPower.Raw.LessThan(big.Zero()) || d.FaultyPower.QA.LessThan(big.Zero()) {
+		return xerrors.Errorf("Deadline left with negative faulty power: %v", d)
 	}
 
 	return nil

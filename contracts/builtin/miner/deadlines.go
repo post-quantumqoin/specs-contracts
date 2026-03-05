@@ -7,6 +7,7 @@ import (
 	"github.com/post-quantumqoin/core-types/dline"
 	"golang.org/x/xerrors"
 
+	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/util/adt"
 )
 
@@ -15,8 +16,8 @@ func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch a
 	return dline.NewInfo(periodStart, deadlineIdx, currEpoch, WPoStPeriodDeadlines, WPoStProvingPeriod, WPoStChallengeWindow, WPoStChallengeLookback, FaultDeclarationCutoff)
 }
 
-func QuantSpecForDeadline(di *dline.Info) QuantSpec {
-	return NewQuantSpec(WPoStProvingPeriod, di.Last())
+func QuantSpecForDeadline(di *dline.Info) builtin.QuantSpec {
+	return builtin.NewQuantSpec(WPoStProvingPeriod, di.Last())
 }
 
 // FindSector returns the deadline and partition index for a sector number.
@@ -28,7 +29,7 @@ func FindSector(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumbe
 			return 0, 0, err
 		}
 
-		partitions, err := adt.AsArray(store, dl.Partitions)
+		partitions, err := adt.AsArray(store, dl.Partitions, DeadlinePartitionsAmtBitwidth)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -57,7 +58,8 @@ func FindSector(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumbe
 	return 0, 0, xerrors.Errorf("sector %d not due at any deadline", sectorNum)
 }
 
-// Returns true if the deadline at the given index is currently mutable.
+// Returns true if the deadline at the given index is currently mutable. A
+// "mutable" deadline may have new sectors assigned to it.
 func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
 	// Get the next non-elapsed deadline (i.e., the next time we care about
 	// mutations to the deadline).
@@ -65,4 +67,41 @@ func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentE
 	// Ensure that the current epoch is at least one challenge window before
 	// that deadline opens.
 	return currentEpoch < dlInfo.Open-WPoStChallengeWindow
+}
+
+// Returns true if optimistically accepted posts submitted to the given deadline
+// may be disputed. Specifically, this ensures that:
+//
+// 1. Optimistic PoSts may not be disputed while the challenge window is open.
+// 2. Optimistic PoSts may not be disputed after the miner could have compacted the deadline.
+func deadlineAvailableForOptimisticPoStDispute(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
+	if provingPeriodStart > currentEpoch {
+		// We haven't started proving yet, there's nothing to dispute.
+		return false
+	}
+	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
+
+	return !dlInfo.IsOpen() && currentEpoch < (dlInfo.Close-WPoStProvingPeriod)+WPoStDisputeWindow
+}
+
+// Returns true if the given deadline may compacted in the current epoch.
+// Deadlines may not be compacted when:
+//
+// 1. The deadline is currently being challenged.
+// 2. The deadline is to be challenged next.
+// 3. Optimistically accepted posts from the deadline's last challenge window
+//    can currently be disputed.
+func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
+	return deadlineIsMutable(provingPeriodStart, dlIdx, currentEpoch) &&
+		!deadlineAvailableForOptimisticPoStDispute(provingPeriodStart, dlIdx, currentEpoch)
+}
+
+// Determine current period start and deadline index directly from current epoch and
+// the offset implied by the proving period. This works correctly even for the state
+// of a miner actor without an active deadline cron
+func NewDeadlineInfoFromOffsetAndEpoch(periodStartSeed abi.ChainEpoch, currEpoch abi.ChainEpoch) *dline.Info {
+	q := builtin.NewQuantSpec(WPoStProvingPeriod, periodStartSeed)
+	currentPeriodStart := q.QuantizeDown(currEpoch)
+	currentDeadlineIdx := uint64((currEpoch-currentPeriodStart)/WPoStChallengeWindow) % WPoStPeriodDeadlines
+	return NewDeadlineInfo(currentPeriodStart, currentDeadlineIdx, currEpoch)
 }

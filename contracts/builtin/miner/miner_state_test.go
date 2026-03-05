@@ -6,11 +6,11 @@ import (
 	"math"
 	"testing"
 
-	cid "github.com/ipfs/go-cid"
-	bitfield "github.com/post-quantumqoin/bitset"
+	"github.com/post-quantumqoin/bitset"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/core-types/big"
 	"github.com/post-quantumqoin/core-types/exitcode"
+	cid "github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,31 +24,46 @@ import (
 func TestPrecommittedSectorsStore(t *testing.T) {
 	t.Run("Put, get and delete", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
+		pc1 := newPreCommitOnChain(1, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), 1)
+		require.NoError(t, harness.s.PutPrecommittedSectors(harness.store, pc1))
+		assert.Equal(t, pc1, harness.getPreCommit(1))
 
-		pc1 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(pc1)
-		assert.Equal(t, pc1, harness.getPreCommit(sectorNo))
+		pc2 := newPreCommitOnChain(2, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), 1)
+		require.NoError(t, harness.s.PutPrecommittedSectors(harness.store, pc2))
+		assert.Equal(t, pc2, harness.getPreCommit(2))
 
-		pc2 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
-		harness.putPreCommit(pc2)
-		assert.Equal(t, pc2, harness.getPreCommit(sectorNo))
+		pc3 := newPreCommitOnChain(3, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), 1)
+		pc4 := newPreCommitOnChain(4, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), 1)
+		require.NoError(t, harness.s.PutPrecommittedSectors(harness.store, pc3, pc4))
+		assert.Equal(t, pc3, harness.getPreCommit(3))
+		assert.Equal(t, pc4, harness.getPreCommit(4))
 
-		harness.deletePreCommit(sectorNo)
-		assert.False(t, harness.hasPreCommit(sectorNo))
+		harness.deletePreCommit(1)
+		assert.False(t, harness.hasPreCommit(1))
+		assert.True(t, harness.hasPreCommit(2))
 	})
 
 	t.Run("Delete nonexistent value returns an error", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-		err := harness.s.DeletePrecommittedSectors(harness.store, sectorNo)
+		err := harness.s.DeletePrecommittedSectors(harness.store, 1)
 		assert.Error(t, err)
 	})
 
 	t.Run("Get nonexistent value returns false", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-		assert.False(t, harness.hasPreCommit(sectorNo))
+		assert.False(t, harness.hasPreCommit(1))
+	})
+
+	t.Run("Duplicate put rejected", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		pc1 := newPreCommitOnChain(1, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), 1)
+		// In sequence
+		assert.NoError(t, harness.s.PutPrecommittedSectors(harness.store, pc1))
+		assert.Error(t, harness.s.PutPrecommittedSectors(harness.store, pc1))
+
+		// In batch
+		pc2 := newPreCommitOnChain(2, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), 1)
+		assert.Error(t, harness.s.PutPrecommittedSectors(harness.store, pc2, pc2))
 	})
 }
 
@@ -593,38 +608,63 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 }
 
 func TestAddPreCommitExpiry(t *testing.T) {
-	epoch := abi.ChainEpoch(10)
-	sectorNum := abi.SectorNumber(1)
-
-	t.Run("successfully add a proof to pre commit expiry queue", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		err := harness.s.AddPreCommitExpiry(harness.store, epoch, sectorNum)
+	t.Run("simple pre-commit expiry and cleanup", func(t *testing.T) {
+		harness := constructStateHarness(t, 0)
+		err := harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{100: {1}})
 		require.NoError(t, err)
 
-		// assert
 		quant := harness.s.QuantSpecEveryDeadline()
-		queue, err := miner.LoadBitfieldQueue(harness.store, harness.s.PreCommittedSectorsExpiry, quant)
+		ExpectBQ().
+			Add(quant.QuantizeUp(100), 1).
+			Equals(t, harness.loadPreCommitCleanUps())
+
+		err = harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{100: {2}})
+		require.NoError(t, err)
+		ExpectBQ().
+			Add(quant.QuantizeUp(100), 1, 2).
+			Equals(t, harness.loadPreCommitCleanUps())
+
+		err = harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{200: {3}})
+		require.NoError(t, err)
+		ExpectBQ().
+			Add(quant.QuantizeUp(100), 1, 2).
+			Add(quant.QuantizeUp(200), 3).
+			Equals(t, harness.loadPreCommitCleanUps())
+	})
+
+	t.Run("batch pre-commit expiry", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		err := harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{
+			100: {1},
+			200: {2, 3},
+			300: {},
+		})
 		require.NoError(t, err)
 
-		require.EqualValues(t, 1, queue.Length())
-		bf := bitfield.BitField{}
-		qEpoch := quant.QuantizeUp(epoch)
-		found, err := queue.Get(uint64(qEpoch), &bf)
+		quant := harness.s.QuantSpecEveryDeadline()
+		ExpectBQ().
+			Add(quant.QuantizeUp(100), 1).
+			Add(quant.QuantizeUp(200), 2, 3).
+			Equals(t, harness.loadPreCommitCleanUps())
+
+		err = harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{
+			100: {1}, // Redundant
+			200: {4},
+			300: {5, 6},
+		})
 		require.NoError(t, err)
-		require.True(t, found)
-		c, err := bf.Count()
-		require.NoError(t, err)
-		require.EqualValues(t, 1, c)
-		f, err := bf.IsSet(uint64(sectorNum))
-		require.NoError(t, err)
-		require.True(t, f)
+		ExpectBQ().
+			Add(quant.QuantizeUp(100), 1).
+			Add(quant.QuantizeUp(200), 2, 3, 4).
+			Add(quant.QuantizeUp(300), 5, 6).
+			Equals(t, harness.loadPreCommitCleanUps())
 	})
 }
 
 func TestSectorAssignment(t *testing.T) {
-	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
 	require.NoError(t, err)
-	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
+	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1_1.SectorSize()
 	require.NoError(t, err)
 
 	openDeadlines := miner.WPoStPeriodDeadlines - 2
@@ -647,9 +687,11 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		newPower, err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, partitionSectors, sectorSize)
+		err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos,
+			partitionSectors, sectorSize)
 		require.NoError(t, err)
-		require.True(t, newPower.Equals(miner.PowerForSectors(sectorSize, sectorInfos)))
+
+		sectorArr := sectorsArr(t, harness.store, sectorInfos)
 
 		dls, err := harness.s.LoadDeadlines(harness.store)
 		require.NoError(t, err)
@@ -663,75 +705,166 @@ func TestSectorAssignment(t *testing.T) {
 			}
 
 			var partitions []bitfield.BitField
+			var postPartitions []miner.PoStPartition
 			for i := uint64(0); i < uint64(partitionsPerDeadline); i++ {
 				start := ((i * openDeadlines) + (dlIdx - 2)) * partitionSectors
-				bf := seq(t, start, partitionSectors)
-				partitions = append(partitions, bf)
+				partBf := seq(t, start, partitionSectors)
+				partitions = append(partitions, partBf)
+				postPartitions = append(postPartitions, miner.PoStPartition{
+					Index:   i,
+					Skipped: bf(),
+				})
 			}
+			allSectorBf, err := bitfield.MultiMerge(partitions...)
+			require.NoError(t, err)
+			allSectorNos, err := allSectorBf.All(uint64(noSectors))
+			require.NoError(t, err)
+
 			dlState.withQuantSpec(quantSpec).
+				withUnproven(allSectorNos...).
 				withPartitions(partitions...).
 				assert(t, harness.store, dl)
 
+			// Now make sure proving activates power.
+
+			result, err := dl.RecordProvenSectors(harness.store, sectorArr, sectorSize, quantSpec, 0, postPartitions)
+			require.NoError(t, err)
+
+			expectedPowerDelta := miner.PowerForSectors(sectorSize, selectSectors(t, sectorInfos, allSectorBf))
+
+			assertBitfieldsEqual(t, allSectorBf, result.Sectors)
+			assertBitfieldEmpty(t, result.IgnoredSectors)
+			assert.True(t, result.NewFaultyPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.PowerDelta.Equals(expectedPowerDelta))
+			assert.True(t, result.RecoveredPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
 			return nil
 		}))
+
+		// Now prove and activate/check power.
 	})
 }
 
 func TestSectorNumberAllocation(t *testing.T) {
-	t.Run("can't allocate the same sector number twice", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
+	allocate := func(h *stateHarness, numbers ...uint64) error {
+		return h.s.AllocateSectorNumbers(h.store, bitfield.NewFromSet(numbers), miner.DenyCollisions)
+	}
+	mask := func(h *stateHarness, ns bitfield.BitField) error {
+		return h.s.AllocateSectorNumbers(h.store, ns, miner.AllowCollisions)
+	}
+	expect := func(h *stateHarness, expected bitfield.BitField) {
+		var b bitfield.BitField
+		err := h.store.Get(context.Background(), h.s.AllocatedSectors, &b)
+		assert.NoError(t, err)
+		assertBitfieldsEqual(t, expected, b)
+	}
 
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
-		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
+	t.Run("batch allocation", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		assert.NoError(t, allocate(harness, 1, 2, 3))
+		assert.NoError(t, allocate(harness, 4, 5, 6))
+		expect(harness, bf(1, 2, 3, 4, 5, 6))
 	})
 
-	t.Run("can mask sector numbers", func(t *testing.T) {
+	t.Run("repeat allocation rejected", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
-
-		assert.NoError(t, harness.s.MaskSectorNumbers(harness.store, bf(0, 1, 2, 3)))
-
-		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, 3))
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, 4))
+		assert.NoError(t, allocate(harness, 1))
+		assert.Error(t, allocate(harness, 1))
+		expect(harness, bf(1))
 	})
 
-	t.Run("can't allocate or mask out of range", func(t *testing.T) {
+	t.Run("overlapping batch rejected", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, abi.MaxSectorNumber+1))
-		assert.Error(t, harness.s.MaskSectorNumbers(harness.store, bf(99, abi.MaxSectorNumber+1)))
+		assert.NoError(t, allocate(harness, 1, 2, 3))
+		assert.Error(t, allocate(harness, 3, 4, 5))
+		expect(harness, bf(1, 2, 3))
 	})
 
-	t.Run("can allocate in range", func(t *testing.T) {
+	t.Run("batch masking", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, abi.MaxSectorNumber))
-		assert.NoError(t, harness.s.MaskSectorNumbers(harness.store, bf(99, abi.MaxSectorNumber)))
+		assert.NoError(t, allocate(harness, 1))
+
+		assert.NoError(t, mask(harness, bf(0, 1, 2, 3)))
+		expect(harness, bf(0, 1, 2, 3))
+
+		assert.Error(t, allocate(harness, 0))
+		assert.Error(t, allocate(harness, 3))
+		assert.NoError(t, allocate(harness, 4))
+		expect(harness, bf(0, 1, 2, 3, 4))
 	})
 
-	t.Run("can compact after growing too large", func(t *testing.T) {
+	t.Run("range limits", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		// keep going till we run out of space
+		assert.NoError(t, allocate(harness, 0))
+		assert.NoError(t, allocate(harness, abi.MaxSectorNumber))
+		expect(harness, bf(0, abi.MaxSectorNumber))
+	})
+
+	t.Run("mask range limits", func(t *testing.T) {
+		harness := constructStateHarness(t, 0)
+
+		assert.NoError(t, mask(harness, bf(0)))
+		assert.NoError(t, mask(harness, bf(abi.MaxSectorNumber)))
+		expect(harness, bf(0, abi.MaxSectorNumber))
+	})
+
+	t.Run("compaction with mask", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+		// Allocate widely-spaced numbers to consume the run-length encoded bytes quickly,
+		// until the limit is reached.
+		limitReached := false
 		for i := uint64(0); i < math.MaxUint64; i++ {
-			no := abi.SectorNumber((i + 1) << 50)
-			err := harness.s.AllocateSectorNumber(harness.store, no)
+			no := (i + 1) << 50
+			err := allocate(harness, no)
 			if err != nil {
 				// We failed, yay!
+				limitReached = true
 				code := exitcode.Unwrap(err, exitcode.Ok)
 				assert.Equal(t, code, exitcode.ErrIllegalArgument)
 
 				// mask half the sector ranges.
-				mask := seq(t, 0, uint64(no)/2)
-				require.NoError(t, harness.s.MaskSectorNumbers(harness.store, mask))
+				toMask := seq(t, 0, uint64(no)/2)
+				require.NoError(t, mask(harness, toMask))
 
 				// try again
-				require.NoError(t, harness.s.AllocateSectorNumber(harness.store, no))
-				return
+				require.NoError(t, allocate(harness, no))
+				break
 			}
 		}
+		assert.True(t, limitReached)
 	})
+}
+
+func TestRepayDebtInPriorityOrder(t *testing.T) {
+	harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+	currentBalance := abi.NewTokenAmount(300)
+	fee := abi.NewTokenAmount(1000)
+	err := harness.s.ApplyPenalty(fee)
+	require.NoError(t, err)
+
+	assert.Equal(t, harness.s.FeeDebt, fee)
+	penaltyFromVesting, penaltyFromBalance, err := harness.s.RepayPartialDebtInPriorityOrder(harness.store, abi.ChainEpoch(0), currentBalance)
+	require.NoError(t, err)
+
+	assert.Equal(t, penaltyFromVesting, big.Zero())
+	assert.Equal(t, penaltyFromBalance, currentBalance)
+
+	expectedDebt := big.Sub(currentBalance, fee).Neg()
+	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
+
+	currentBalance = abi.NewTokenAmount(0)
+	fee = abi.NewTokenAmount(2050)
+	err = harness.s.ApplyPenalty(fee)
+	require.NoError(t, err)
+
+	_, _, err = harness.s.RepayPartialDebtInPriorityOrder(harness.store, abi.ChainEpoch(33), currentBalance)
+	require.NoError(t, err)
+
+	expectedDebt = big.Add(expectedDebt, fee)
+	assert.Equal(t, expectedDebt, harness.s.FeeDebt)
 }
 
 type stateHarness struct {
@@ -804,11 +937,6 @@ func (h *stateHarness) deleteSectors(sectorNos ...uint64) {
 // Precommit Store Operations
 //
 
-func (h *stateHarness) putPreCommit(info *miner.SectorPreCommitOnChainInfo) {
-	err := h.s.PutPrecommittedSector(h.store, info)
-	require.NoError(h.t, err)
-}
-
 func (h *stateHarness) getPreCommit(sectorNo abi.SectorNumber) *miner.SectorPreCommitOnChainInfo {
 	out, found, err := h.s.GetPrecommittedSector(h.store, sectorNo)
 	require.NoError(h.t, err)
@@ -827,36 +955,25 @@ func (h *stateHarness) deletePreCommit(sectorNo abi.SectorNumber) {
 	require.NoError(h.t, err)
 }
 
+func (h *stateHarness) loadPreCommitCleanUps() miner.BitfieldQueue {
+	queue, err := miner.LoadBitfieldQueue(h.store, h.s.PreCommittedSectorsCleanUp, h.s.QuantSpecEveryDeadline(), miner.PrecommitCleanUpAmtBitwidth)
+	require.NoError(h.t, err)
+	return queue
+}
+
 func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHarness {
 	// store init
 	store := ipld.NewADTStore(context.Background())
-	emptyMap, err := adt.MakeEmptyMap(store).Root()
-	require.NoError(t, err)
-
-	emptyBitfield := bitfield.NewFromSet(nil)
-	emptyBitfieldCid, err := store.Put(store.Context(), emptyBitfield)
-	require.NoError(t, err)
-
-	emptyArray, err := adt.MakeEmptyArray(store).Root()
-	require.NoError(t, err)
-	emptyDeadline := miner.ConstructDeadline(emptyArray)
-	emptyDeadlineCid, err := store.Put(store.Context(), emptyDeadline)
-	require.NoError(t, err)
-
-	emptyDeadlines := miner.ConstructDeadlines(emptyDeadlineCid)
-	emptyDeadlinesCid, err := store.Put(context.Background(), emptyDeadlines)
-	require.NoError(t, err)
-
 	// state field init
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
 
-	testSealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1
+	testWindowPoStProofType := abi.RegisteredPoStProof_StackedDrgWindow2KiBV1
 
-	sectorSize, err := testSealProofType.SectorSize()
+	sectorSize, err := testWindowPoStProofType.SectorSize()
 	require.NoError(t, err)
 
-	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(testSealProofType)
+	partitionSectors, err := builtin.PoStProofWindowPoStPartitionSectors(testWindowPoStProofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
@@ -865,19 +982,14 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 		PendingWorkerKey:           nil,
 		PeerId:                     abi.PeerID("peer"),
 		Multiaddrs:                 testMultiaddrs,
-		SealProofType:              testSealProofType,
+		WindowPoStProofType:        testWindowPoStProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
 	}
 	infoCid, err := store.Put(context.Background(), &info)
 	require.NoError(t, err)
 
-	emptyVestingFunds := miner.ConstructVestingFunds()
-	emptyVestingFundsCid, err := store.Put(context.Background(), emptyVestingFunds)
-	require.NoError(t, err)
-
-	state, err := miner.ConstructState(infoCid, periodBoundary, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid,
-		emptyVestingFundsCid)
+	state, err := miner.ConstructState(store, infoCid, periodBoundary, 0)
 	require.NoError(t, err)
 
 	return &stateHarness{
@@ -893,7 +1005,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 //
 
 // returns a unique SectorPreCommitOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
-func newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
+func newPreCommitOnChain(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.TokenAmount, epoch abi.ChainEpoch) *miner.SectorPreCommitOnChainInfo {
 	info := newSectorPreCommitInfo(sectorNo, sealed)
 	return &miner.SectorPreCommitOnChainInfo{
 		Info:               *info,
@@ -904,36 +1016,33 @@ func newSectorPreCommitOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, de
 	}
 }
 
-const (
-	sectorSealRandEpochValue = abi.ChainEpoch(1)
-	sectorExpiration         = abi.ChainEpoch(1)
-)
-
 // returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
 	return &miner.SectorOnChainInfo{
 		SectorNumber:          sectorNo,
-		SealProof:             abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealProof:             abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		SealedCID:             sealed,
 		DealIDs:               nil,
 		Activation:            activation,
-		Expiration:            sectorExpiration,
+		Expiration:            abi.ChainEpoch(1),
 		DealWeight:            weight,
 		VerifiedDealWeight:    weight,
 		InitialPledge:         abi.NewTokenAmount(0),
 		ExpectedDayReward:     abi.NewTokenAmount(0),
 		ExpectedStoragePledge: abi.NewTokenAmount(0),
+		ReplacedSectorAge:     abi.ChainEpoch(0),
+		ReplacedDayReward:     big.Zero(),
 	}
 }
 
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		SealProof:     abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealProof:     abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		SectorNumber:  sectorNo,
 		SealedCID:     sealed,
-		SealRandEpoch: sectorSealRandEpochValue,
+		SealRandEpoch: abi.ChainEpoch(1),
 		DealIDs:       nil,
-		Expiration:    sectorExpiration,
+		Expiration:    abi.ChainEpoch(1),
 	}
 }

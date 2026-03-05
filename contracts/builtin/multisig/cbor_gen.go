@@ -8,9 +8,9 @@ import (
 
 	address "github.com/post-quantumqoin/address"
 	abi "github.com/post-quantumqoin/core-types/abi"
-	exitcode "github.com/post-quantumqoin/core-types/exitcode"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
+	exitcode "github.com/post-quantumqoin/core-types/exitcode"
 )
 
 var _ = xerrors.Errorf
@@ -1579,3 +1579,4 @@ func (t *ProposeReturn) UnmarshalCBOR(r io.Reader) error {
 	}
 	return nil
 }
+

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ipfs/go-cid"
 	"github.com/post-quantumqoin/core-types/abi"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/account"
@@ -21,6 +20,7 @@ import (
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/system"
 	"github.com/post-quantumqoin/specs-contracts/contracts/builtin/verifreg"
 	"github.com/post-quantumqoin/specs-contracts/contracts/runtime"
+	"github.com/ipfs/go-cid"
 
 	"github.com/stretchr/testify/require"
 )
