@@ -3,7 +3,9 @@ module github.com/post-quantumqoin/specs-contracts
 go 1.22.2
 
 require (
+	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0
 	github.com/filecoin-project/go-amt-ipld/v4 v4.2.0
+	github.com/filecoin-project/go-hamt-ipld v0.1.5
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.3.2
@@ -14,6 +16,7 @@ require (
 	github.com/minio/sha256-simd v1.0.1
 	github.com/multiformats/go-multibase v0.0.3
 	github.com/multiformats/go-multihash v0.2.1
+	github.com/pkg/errors v0.9.1
 	github.com/post-quantumqoin/address v0.1.0
 	github.com/post-quantumqoin/bitset v0.1.1
 	github.com/post-quantumqoin/core-types v0.4.3
